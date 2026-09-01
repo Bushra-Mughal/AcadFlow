@@ -1,0 +1,30 @@
+id: selectItemWithEmptyValue
+language: Tsx
+files:
+  - src/**/*.tsx
+rule:
+  kind: jsx_opening_element
+  all:
+    - has:
+        kind: identifier
+        regex: '^SelectItem$'
+    - has:
+        kind: jsx_attribute
+        all:
+          - has:
+              kind: property_identifier
+              regex: '^value$'
+          - any:
+              - has:
+                  kind: string
+                  regex: '^""$'
+              - has:
+                  kind: jsx_expression
+                  has:
+                    kind: string
+                    regex: '^""$'
+
+message: "æ£€æµ‹åˆ° SelectItem ç»„ä»¶ä½¿ç”¨ç©ºå­—ç¬¦ä¸² value: $MATCHï¼Œ è¿™æ˜¯é”™è¯¯ç”¨æ³•ï¼Œ è¿è¡Œæ—¶ä¼šæŠ¥é”™ï¼Œ è¯·ä¿®æ”¹ï¼Œ å¦‚æžœæƒ³å®žçŽ°å…¨é€‰ï¼Œå»ºè®®ä½¿ç”¨allä»£æ›¿ç©ºå­—ç¬¦ä¸²"
+severity: error
+
+

@@ -1,0 +1,68 @@
+id: require-button-interaction
+language: Tsx
+files:
+  - src/**/*.tsx
+  - src/**/*.jsx
+rule:
+  kind: jsx_opening_element
+  all:
+    # å¿…é¡»æ˜¯ <Button> ç»„ä»¶
+    - has:
+        kind: identifier
+        regex: '^Button$'
+    # æ²¡æœ‰ onClick
+    - not:
+        has:
+          kind: jsx_attribute
+          has:
+            kind: property_identifier
+            regex: '^onClick$'
+    # æ²¡æœ‰ asChild
+    - not:
+        has:
+          kind: jsx_attribute
+          has:
+            kind: property_identifier
+            regex: '^asChild$'
+    # æ²¡æœ‰ type="submit" æˆ– type="reset"
+    - not:
+        has:
+          kind: jsx_attribute
+          all:
+            - has:
+                kind: property_identifier
+                regex: '^type$'
+            - any:
+                - has:
+                    kind: string
+                    regex: '^"(submit|reset)"$'
+                - has:
+                    kind: jsx_expression
+                    has:
+                      kind: string
+                      regex: '^"(submit|reset)"$'
+    # ä¸åœ¨ *Trigger ç»„ä»¶å†…éƒ¨ï¼ˆå¦‚ DialogTriggerã€SheetTriggerï¼‰
+    - not:
+        inside:
+          stopBy: end
+          kind: jsx_element
+          has:
+            kind: jsx_opening_element
+            has:
+              kind: identifier
+              regex: 'Trigger$'
+    # ä¸åœ¨ <Link> æˆ– <a> å†…éƒ¨ï¼ˆç”±çˆ¶çº§æä¾›å¯¼èˆªäº¤äº’ï¼‰
+    - not:
+        inside:
+          stopBy: end
+          kind: jsx_element
+          has:
+            kind: jsx_opening_element
+            has:
+              kind: identifier
+              regex: '^(Link|a)$'
+
+message: '<Button> å¿…é¡»æ˜¯å¯ç‚¹å‡»çš„,è¯·ç¡®ä¿å…¶ç‚¹å‡»åŽçš„é€»è¾‘å·²ç¼–å†™\nè¯·æ·»åŠ  onClickã€type="submit"ã€type="reset"ã€asChild å±žæ€§ï¼Œæˆ–å°†å…¶åŒ…è£¹åœ¨ *Trigger ç»„ä»¶ä¸­ï¼Œæˆ– <Link> æˆ– <a> ä¸­'
+severity: error
+
+

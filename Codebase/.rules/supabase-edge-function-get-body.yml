@@ -1,0 +1,29 @@
+id: supabase-edge-function-get-with-body
+language: ts
+files:
+  - src/**/*.ts
+  - src/**/*.tsx
+severity: error
+message: |
+  âŒ GET è¯·æ±‚ä¸èƒ½æºå¸¦ bodyï¼šsupabase.functions.invoke ä½¿ç”¨ method: 'GET' æ—¶å‚æ•°å¿…é¡»æ‹¼æŽ¥åœ¨ URL é‡Œ
+ 
+  âœ… æ­£ç¡®å†™æ³•ï¼ˆGET è¯·æ±‚ï¼šå‚æ•°å¿…é¡»æ‹¼æŽ¥åˆ°å‡½æ•°å URL ä¸­ï¼‰ï¼š
+  supabase.functions.invoke(`function-name?task_id=${taskId}&action=check`)
+ 
+ 
+  åŽŸå› ï¼š
+  - HTTP è§„èŒƒï¼ˆRFC 9110ï¼‰æ˜Žç¡® GET è¯·æ±‚ä¸åº”æºå¸¦è¯­ä¹‰åŒ– body
+  - GET çš„æŸ¥è¯¢å‚æ•°å¿…é¡»ä½äºŽ URL query string ä¸­ï¼Œä¸èƒ½é€šè¿‡ body ä¼ é€’
+  - Supabase Edge Functions çš„ GET è°ƒç”¨åº”å°†å‚æ•°ç›´æŽ¥é™„åŠ åœ¨å‡½æ•°ååŽé¢
+
+rule:
+  any:
+    # åŒ¹é… method: 'GET' åœ¨ body ä¹‹å‰çš„å†™æ³•
+    - pattern: "supabase.functions.invoke($FUNC, {method: 'GET', body: $BODY})"
+    # åŒ¹é… body åœ¨ method: 'GET' ä¹‹å‰çš„å†™æ³•
+    - pattern: "supabase.functions.invoke($FUNC, {body: $BODY, method: 'GET'})"
+    # åŒ¹é…å¸¦æ³›åž‹å‚æ•° + method: 'GET' åœ¨ body ä¹‹å‰çš„å†™æ³•
+    - pattern: "supabase.functions.invoke<$TYPE>($FUNC, {method: 'GET', body: $BODY})"
+    # åŒ¹é…å¸¦æ³›åž‹å‚æ•° + body åœ¨ method: 'GET' ä¹‹å‰çš„å†™æ³•
+    - pattern: "supabase.functions.invoke<$TYPE>($FUNC, {body: $BODY, method: 'GET'})"
+

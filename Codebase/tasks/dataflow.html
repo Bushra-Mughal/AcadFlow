@@ -1,0 +1,469 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AcadFlow â€” Complete Dataflow Diagram</title>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+  <style>
+    :root {
+      --bg: #0b0d14;
+      --card: #121420;
+      --text: #e6e7ec;
+      --muted: #9ca3af;
+      --accent: #6366f1;
+      --accent-2: #8b5cf6;
+      --border: rgba(255,255,255,0.08);
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --info: #3b82f6;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+    header {
+      padding: 2rem;
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(135deg, rgba(99,102,241,0.12), rgba(139,92,246,0.08));
+    }
+    h1 { margin: 0 0 0.5rem; font-size: 2rem; }
+    .subtitle { color: var(--muted); margin: 0; }
+    main { padding: 2rem; max-width: 1400px; margin: 0 auto; }
+    section { margin-bottom: 3rem; }
+    h2 { color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; margin-bottom: 1.5rem; }
+    .mermaid {
+      background: var(--card);
+      border-radius: 1rem;
+      padding: 1.5rem;
+      border: 1px solid var(--border);
+      overflow-x: auto;
+    }
+    .legend {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 1rem;
+      margin: 1rem 0 2rem;
+    }
+    .legend-item {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 0.75rem;
+      padding: 1rem;
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .dot { width: 14px; height: 14px; border-radius: 50%; }
+    .flow-list { background: var(--card); border-radius: 1rem; padding: 1.5rem; border: 1px solid var(--border); }
+    .flow-list ol { margin: 0; padding-left: 1.2rem; }
+    .flow-list li { margin-bottom: 0.75rem; }
+    .flow-list code {
+      background: rgba(99,102,241,0.12);
+      color: #c4b5fd;
+      padding: 0.1rem 0.4rem;
+      border-radius: 0.25rem;
+      font-size: 0.9em;
+    }
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 0.95rem; }
+    th, td { text-align: left; padding: 0.75rem 1rem; border-bottom: 1px solid var(--border); }
+    th { color: var(--accent); font-weight: 600; }
+    tr:hover td { background: rgba(255,255,255,0.02); }
+    footer { text-align: center; padding: 2rem; color: var(--muted); border-top: 1px solid var(--border); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>AcadFlow â€” Complete Dataflow</h1>
+    <p class="subtitle">Every user path, data flow, backend call, and storage interaction in v58.</p>
+  </header>
+
+  <main>
+    <section id="legend">
+      <h2>Legend</h2>
+      <div class="legend">
+        <div class="legend-item"><div class="dot" style="background:#6366f1"></div><span>Frontend / React</span></div>
+        <div class="legend-item"><div class="dot" style="background:#3b82f6"></div><span>Supabase Service</span></div>
+        <div class="legend-item"><div class="dot" style="background:#22c55e"></div><span>PostgreSQL / Table</span></div>
+        <div class="legend-item"><div class="dot" style="background:#f59e0b"></div><span>Edge Function / AI</span></div>
+        <div class="legend-item"><div class="dot" style="background:#ec4899"></div><span>Storage</span></div>
+        <div class="legend-item"><div class="dot" style="background:#a855f7"></div><span>External API</span></div>
+      </div>
+    </section>
+
+    <section id="high-level">
+      <h2>1. High-Level System Architecture</h2>
+      <div class="mermaid">
+graph TB
+  A[User Browser] -->|HTTPS / Vite SPA| B[React 18 + TypeScript]
+  B --> C[React Router]
+  C --> D[RouteGuard]
+  D -->|Protected| E[App Layout]
+  D -->|Public| F[Auth Pages]
+  B --> G[Tailwind CSS + shadcn/ui]
+  B --> H[Supabase JS Client]
+  H --> I[Supabase Auth]
+  H --> J[Supabase PostgreSQL]
+  H --> K[Supabase Storage]
+  H --> L[Supabase Edge Functions]
+  L --> M[Gemini 2.5 Flash API]
+  J --> N[RLS Policies]
+  J --> O[Triggers & RPCs]
+  O --> P[user_stats / badges / activities]
+  I --> Q[auth.users]
+  Q --> R[profiles table]
+      </div>
+    </section>
+
+    <section id="auth-flow">
+      <h2>2. Authentication & User Data Flow</h2>
+      <div class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as User
+  participant F as AuthContext / Pages
+  participant S as Supabase Auth
+  participant DB as profiles table
+
+  U->>F: Enter username + password
+  F->>S: signInWithPassword({ email: username@miaoda.com, password })
+  S->>F: JWT session
+  F->>DB: SELECT * FROM profiles WHERE id = user.id
+  DB->>F: Profile { username, email, gmail, role }
+  F->>U: Redirect to Dashboard
+
+  U->>F: Sign up with username + optional Gmail
+  F->>DB: RPC is_username_available(p_username)
+  DB->>F: true / false
+  F->>S: signUp({ email: username@miaoda.com, password })
+  S->>DB: Trigger handle_new_user() inserts profiles row
+  F->>DB: UPDATE profiles SET username = input, gmail = input
+  DB->>F: Profile updated
+  F->>U: Account created
+
+  U->>F: Continue with Google
+  F->>S: signInWithSSO({ domain: 'miaoda-gg.com' })
+  S->>U: Google OAuth redirect
+  U->>S: Authorize
+  S->>F: JWT session
+  F->>DB: Match by gmail or create new profile
+  F->>U: Redirect to Dashboard
+
+  U->>F: Forgot password
+  F->>S: resetPasswordForEmail(username@miaoda.com)
+  S->>U: Reset email sent
+  U->>F: Set new password
+  F->>S: updateUser({ password })
+  S->>F: Password updated
+  F->>U: Redirect to Login
+      </div>
+    </section>
+
+    <section id="assignment-flow">
+      <h2>3. Assignment Lifecycle Data Flow</h2>
+      <div class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as Student
+  participant P as Assignments Page
+  participant S as Supabase
+  participant T as assignments table
+  participant F as Edge Function smart-paste
+  participant R as award_points RPC
+
+  U->>P: Open Assignments
+  P->>S: SELECT * FROM assignments WHERE user_id = auth.uid()
+  S->>T: RLS: user_id = auth.uid()
+  T->>P: Assignment[]
+
+  U->>P: Smart Paste
+  P->>F: POST { text: pastedText }
+  F->>P: { title, description, dueDate, course, priority }
+  U->>P: Create assignment
+  P->>S: INSERT INTO assignments
+  S->>T: RLS check
+  T->>P: Assignment created
+  P->>S: trackActivity('created', assignmentId)
+  S->>T: activities insert
+
+  U->>P: Mark completed
+  P->>S: UPDATE assignments SET status = 'completed'
+  S->>T: RLS check + update trigger
+  P->>S: trackActivity('status_changed', assignmentId, { new_status: 'completed' })
+  S->>T: activities insert
+  P->>S: RPC award_points(user_id, 'assignment_completed_ontime' / 'late')
+  S->>R: Update user_stats, auto-rank
+  R->>S: RPC check_and_award_badges(user_id)
+  S->>P: Stats updated
+      </div>
+    </section>
+
+    <section id="project-flow">
+      <h2>4. Project & Collaboration Data Flow</h2>
+      <div class="mermaid">
+sequenceDiagram
+  autonumber
+  actor C as Project Creator
+  actor M as Invited Member
+  participant P as Projects Page
+  participant S as Supabase
+  participant DB as projects / project_members
+  participant R as award_points RPC
+
+  C->>P: Create project
+  P->>S: INSERT INTO projects (creator_id = auth.uid())
+  S->>DB: RLS check
+  P->>S: trackActivity('created', projectId)
+
+  C->>P: Invite member by email
+  P->>S: RPC find_user_by_email(p_email)
+  S->>DB: Lookup profiles by gmail/email
+  DB->>P: user_id
+  P->>S: INSERT INTO project_members (project_id, user_id, email)
+  S->>DB: RLS check (creator only)
+  P->>S: RPC award_points(creator_id, 'team_member_invited')
+
+  M->>P: View projects
+  P->>S: SELECT * FROM projects
+  S->>DB: RLS: creator_id = uid OR is_project_member(id, uid)
+  DB->>P: Project list
+
+  M->>P: Update project status
+  P->>S: UPDATE projects
+  S->>DB: RLS: creator or member
+  P->>S: trackActivity('status_changed', projectId)
+  P->>S: RPC award_points(..., 'project_completed_ontime' / ...)
+      </div>
+    </section>
+
+    <section id="file-flow">
+      <h2>5. File Upload & Storage Data Flow</h2>
+      <div class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as User
+  participant F as Files Page
+  participant St as Supabase Storage
+  participant DB as files table
+  participant R as award_points RPC
+
+  U->>F: Create folder / subfolder
+  F->>DB: INSERT INTO file_folders
+  DB->>F: Folder created
+
+  U->>F: Upload file
+  F->>St: upload(`${userId}/${fileName}`, file)
+  St->>F: Public / signed URL
+  F->>DB: INSERT INTO files (user_id, name, file_path, file_type, file_size, mime_type, folder_id, project_id, assignment_id)
+  DB->>F: File record created
+  F->>R: award_points(user_id, 'file_uploaded')
+
+  U->>F: Move file to folder
+  F->>DB: UPDATE files SET folder_id = ...
+  DB->>F: Updated
+
+  U->>F: Download / preview
+  F->>St: createSignedUrl(file_path, expiry)
+  St->>F: Signed URL
+  F->>U: Browser opens / downloads
+      </div>
+    </section>
+
+    <section id="ai-flow">
+      <h2>6. AI Assistant & Analyzer Data Flow</h2>
+      <div class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as Student
+  participant C as AI Assistant Page
+  participant E as Edge Function
+  participant G as Gemini API
+  participant DB as chat_messages
+  participant R as award_points RPC
+
+  U->>C: Send message
+  C->>C: Collect assignments, projects, files as context
+  C->>E: POST /ai-assistant { message, conversationHistory, contexts, sessionId }
+  E->>E: Build system prompt
+  E->>G: streamGenerateContent(contents)
+  G->>E: SSE stream
+  E->>C: Stream response
+  C->>U: Render markdown incrementally
+  C->>DB: INSERT INTO chat_messages (user_id, role, content, session_id)
+  C->>R: award_points(user_id, 'ai_session')
+
+  U->>C: Open AI Analyzer
+  C->>E: POST /ai-analyzer { content, contentType: 'text' }
+  E->>G: streamGenerateContent with JSON prompt
+  G->>E: SSE stream
+  E->>E: Extract JSON
+  E->>C: AnalysisResult JSON
+  C->>DB: INSERT INTO analysis_history (user_id, content_preview, overall_score, result)
+  C->>U: Show scores, grammar, structure, plagiarism, tools
+      </div>
+    </section>
+
+    <section id="theme-flow">
+      <h2>7. Theme System Data Flow</h2>
+      <div class="mermaid">
+sequenceDiagram
+  autonumber
+  actor U as User
+  participant TC as ThemeCustomization Page
+  participant CTX as CinematicContext
+  participant LIB as theme.ts / cinematicTheme.ts
+  participant DOM as document.documentElement
+  participant CAN as CinematicBackground
+
+  U->>TC: Select preset theme
+  TC->>LIB: applyTheme(theme)
+  LIB->>DOM: setProperty('--primary', ...)
+  LIB->>DOM: localStorage.setItem('acadflow-theme', JSON.stringify(theme))
+  TC->>CTX: deactivateCinematic()
+
+  U->>TC: Activate "Matrix" cinematic theme
+  TC->>CTX: activateCinematic(matrixTheme)
+  CTX->>LIB: applyCinematicTheme(theme, customization)
+  LIB->>DOM: setAttribute('data-cinematic', 'matrix')
+  LIB->>DOM: setProperty('--background', ..., '--font', ...)
+  LIB->>DOM: localStorage.setItem('acadflow-cinematic-theme', JSON.stringify(state))
+  CTX->>CAN: Render MatrixRainCanvas
+  CAN->>CAN: requestAnimationFrame loop
+  CAN->>U: Live background
+
+  U->>TC: Change accent color / speed / intensity
+  TC->>CTX: updateCustomization({ accentColor, bgIntensity, animationSpeed, fontStyle })
+  CTX->>LIB: applyCinematicTheme(activeTheme, updatedCustomization)
+  LIB->>DOM: Update CSS variables
+  LIB->>DOM: Update localStorage
+  CAN->>U: Canvas reacts to new props
+      </div>
+    </section>
+
+    <section id="gamification-flow">
+      <h2>8. Gamification Data Flow</h2>
+      <div class="mermaid">
+sequenceDiagram
+  autonumber
+  participant F as Feature Page
+  participant S as Supabase
+  participant R as award_points RPC
+  participant U as user_stats table
+  participant B as check_and_award_badges RPC
+  participant UB as user_badges / badges
+
+  F->>S: RPC award_points(user_id, action_type)
+  S->>R: SECURITY DEFINER
+  R->>U: INSERT/UPDATE points, coins, counters
+  U->>R: Trigger update_rank_from_points
+  R->>S: Return { points_awarded, rank_changed, old_rank, new_rank }
+  F->>S: RPC check_and_award_badges(user_id)
+  S->>B: SECURITY DEFINER
+  B->>UB: Compare stats to badge criteria
+  B->>UB: INSERT INTO user_badges for newly unlocked
+  B->>S: Return newly unlocked badge info
+  S->>F: Stats + badges
+  F->>F: RankBar / Achievements re-render
+      </div>
+    </section>
+
+    <section id="flows-list">
+      <h2>9. User Data Path Summary</h2>
+      <div class="flow-list">
+        <ol>
+          <li><strong>Registration:</strong> User chooses username â†’ <code>is_username_available</code> RPC â†’ Supabase Auth creates <code>username@miaoda.com</code> â†’ trigger creates <code>profiles</code> row â†’ username/Gmail stored.</li>
+          <li><strong>Login:</strong> User enters credentials â†’ <code>signInWithPassword</code> â†’ JWT stored in Supabase client â†’ <code>profiles</code> loaded â†’ <code>RouteGuard</code> grants access.</li>
+          <li><strong>Dashboard:</strong> Fetches <code>assignments</code> and <code>projects</code> â†’ computes stats â†’ renders <code>RankBar</code>, progress bars, upcoming deadlines.</li>
+          <li><strong>Creating Assignment:</strong> Form data â†’ <code>INSERT assignments</code> â†’ <code>trackActivity('created')</code> â†’ <code>activities</code> row.</li>
+          <li><strong>Completing Assignment:</strong> Status update â†’ <code>trackActivity('status_changed')</code> â†’ <code>award_points</code> RPC â†’ <code>user_stats</code> updated â†’ <code>check_and_award_badges</code> â†’ UI toasts.</li>
+          <li><strong>Creating Project:</strong> <code>INSERT projects</code> with creator_id â†’ invite members via <code>find_user_by_email</code> RPC â†’ <code>INSERT project_members</code>.</li>
+          <li><strong>Uploading File:</strong> File â†’ Supabase Storage bucket â†’ public/signed URL â†’ <code>INSERT files</code> with metadata â†’ <code>award_points('file_uploaded')</code>.</li>
+          <li><strong>AI Chat:</strong> Message + context â†’ <code>ai-assistant</code> Edge Function â†’ Gemini stream â†’ <code>INSERT chat_messages</code> â†’ <code>award_points('ai_session')</code>.</li>
+          <li><strong>AI Analysis:</strong> Content â†’ <code>ai-analyzer</code> Edge Function â†’ Gemini JSON â†’ <code>INSERT analysis_history</code> â†’ UI renders score breakdown.</li>
+          <li><strong>Theme Switch:</strong> Theme selection â†’ CSS variables injected â†’ localStorage persisted â†’ <code>CinematicBackground</code> canvas rendered if active.</li>
+          <li><strong>Activity Log:</strong> Reads <code>activities</code> table filtered by user â†’ normalizes <code>@miaoda.com</code> emails to <code>@acadflow</code>.</li>
+          <li><strong>Achievements:</strong> Loads <code>badges</code> + <code>user_badges</code> + <code>user_stats</code> â†’ computes progress and locked/unlocked state.</li>
+          <li><strong>Logout:</strong> <code>signOut()</code> â†’ session cleared â†’ <code>RouteGuard</code> redirects to login.</li>
+        </ol>
+      </div>
+    </section>
+
+    <section id="tables">
+      <h2>10. Table-to-Feature Mapping</h2>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Table</th><th>Driven By</th><th>Read In</th><th>Updated By</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>auth.users</code></td><td>Auth sign up / SSO</td><td>AuthContext</td><td>Supabase Auth</td></tr>
+            <tr><td><code>profiles</code></td><td>Auth trigger / signup</td><td>AuthContext, ActivityLog</td><td>AuthContext, projects</td></tr>
+            <tr><td><code>assignments</code></td><td>Assignments, Dashboard</td><td>Assignments, Dashboard, AI Assistant</td><td>Assignments, AssignmentDetail</td></tr>
+            <tr><td><code>projects</code></td><td>Projects, Dashboard</td><td>Projects, Dashboard, AI Assistant</td><td>Projects, ProjectDetail</td></tr>
+            <tr><td><code>project_members</code></td><td>Project invitation</td><td>Projects, ProjectDetail</td><td>Projects (creator only)</td></tr>
+            <tr><td><code>files</code></td><td>File upload</td><td>Files, AssignmentDetail, ProjectDetail</td><td>Files</td></tr>
+            <tr><td><code>file_folders</code></td><td>Folder creation</td><td>Files</td><td>Files</td></tr>
+            <tr><td><code>activities</code></td><td><code>trackActivity</code></td><td>ActivityLog</td><td>All feature pages</td></tr>
+            <tr><td><code>chat_messages</code></td><td>AI Assistant</td><td>AI Assistant</td><td>AI Assistant</td></tr>
+            <tr><td><code>analysis_history</code></td><td>AI Analyzer</td><td>AI Analyzer</td><td>AI Analyzer</td></tr>
+            <tr><td><code>user_stats</code></td><td><code>award_points</code> RPC</td><td>RankBar, Achievements</td><td><code>award_points</code> RPC</td></tr>
+            <tr><td><code>badges</code></td><td>Seed migration</td><td>Achievements, RankBar</td><td>Seeded only</td></tr>
+            <tr><td><code>user_badges</code></td><td><code>check_and_award_badges</code></td><td>Achievements, RankBar</td><td><code>check_and_award_badges</code></td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="rls">
+      <h2>11. RLS & Security Flows</h2>
+      <div class="mermaid">
+flowchart LR
+  A[Frontend Request] --> B[Supabase API]
+  B --> C{RLS Policy}
+  C -->|Allowed| D[PostgreSQL Row]
+  C -->|Denied| E[Permission Error]
+  D --> F[Triggers / RPCs]
+  F --> G[user_stats, activities, badges]
+      </div>
+      <div class="flow-list" style="margin-top:1rem">
+        <ul>
+          <li><strong>assignments:</strong> <code>user_id = auth.uid()</code> for all operations.</li>
+          <li><strong>projects:</strong> Creator or member can read/update; only creator can delete.</li>
+          <li><strong>project_members:</strong> Creator can add/remove; members can view.</li>
+          <li><strong>files:</strong> Owner can CRUD; project members can view project files.</li>
+          <li><strong>profiles:</strong> Own profile access; admins full access via <code>has_role</code>.</li>
+          <li><strong>Username availability:</strong> Anonymous RPC <code>is_username_available</code> uses <code>SECURITY DEFINER</code> to bypass RLS.</li>
+          <li><strong>Points:</strong> <code>award_points</code> RPC uses <code>SECURITY DEFINER</code> so users cannot manually update stats.</li>
+        </ul>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>AcadFlow v58 â€” Complete dataflow documentation</p>
+  </footer>
+
+  <script>
+    mermaid.initialize({
+      startOnLoad: true,
+      theme: 'dark',
+      themeVariables: {
+        primaryColor: '#6366f1',
+        primaryTextColor: '#ffffff',
+        primaryBorderColor: '#4f46e5',
+        lineColor: '#9ca3af',
+        secondaryColor: '#1e293b',
+        tertiaryColor: '#0f172a',
+        fontFamily: 'ui-sans-serif, system-ui, sans-serif'
+      }
+    });
+  </script>
+</body>
+</html>
+
+

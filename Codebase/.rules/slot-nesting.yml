@@ -1,0 +1,54 @@
+---
+id: radix-trigger-formcontrol-nesting
+language: tsx
+files:
+  - src/**/*.tsx
+message: |
+  âŒ æ£€æµ‹åˆ°å±é™©çš„ Slot åµŒå¥—ï¼šRadix UI Trigger (asChild) å†…åŒ…è£¹ FormControl
+
+  é—®é¢˜ä»£ç ï¼š
+  <PopoverTrigger asChild>
+    <FormControl>      â† ä¼šå¯¼è‡´ç‚¹å‡»äº‹ä»¶å¤±æ•ˆ
+      <Button>...</Button>
+    </FormControl>
+  </PopoverTrigger>
+
+  æ­£ç¡®å†™æ³•ï¼š
+  <PopoverTrigger asChild>
+    <Button>...</Button>   â† ç›´æŽ¥ä½¿ç”¨ Button
+  </PopoverTrigger>
+
+  åŽŸå› ï¼šFormControl å’Œ Trigger éƒ½ä½¿ç”¨ Radix UI çš„ Slot æœºåˆ¶ï¼ŒåŒå±‚åµŒå¥—ä¼šå¯¼è‡´ï¼š
+  - ref ä¼ é€’é“¾æ–­è£‚
+  - ç‚¹å‡»äº‹ä»¶ä¸¢å¤±
+  - å†…éƒ¨ç»„ä»¶æ— æ³•äº¤äº’
+
+  FormControl åªåº”è¯¥ç”¨äºŽåŽŸç”Ÿè¡¨å•æŽ§ä»¶ï¼ˆInput, Textarea, Selectï¼‰ï¼Œä¸è¦ç”¨äºŽè§¦å‘å™¨æŒ‰é’®ã€‚
+severity: error
+rule:
+  kind: jsx_element
+  all:
+    # å¼€å§‹æ ‡ç­¾éœ€è¦æ»¡è¶³çš„æ¡ä»¶
+    - has:
+        kind: jsx_opening_element
+        all:
+          # åŒ¹é…æ‰€æœ‰ Radix UI çš„ Trigger ç»„ä»¶
+          - has:
+              field: name
+              regex: "^(Popover|Dialog|DropdownMenu|AlertDialog|HoverCard|Menubar|NavigationMenu|ContextMenu|Tooltip)Trigger$"
+          # å¿…é¡»æœ‰ asChild å±žæ€§
+          - has:
+              kind: jsx_attribute
+              has:
+                kind: property_identifier
+                regex: "^asChild$"
+    # ç›´æŽ¥å­å…ƒç´ åŒ…å« FormControl
+    - has:
+        kind: jsx_element
+        has:
+          kind: jsx_opening_element
+          has:
+            field: name
+            regex: "^FormControl$"
+
+

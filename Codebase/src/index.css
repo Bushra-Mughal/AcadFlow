@@ -1,0 +1,393 @@
+/* stylelint-disable */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here.
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    --radius: 1rem;
+    /* Light mode - Premium, Energetic, Student-Friendly */
+    --background: 240 25% 98%;
+    --foreground: 240 15% 12%;
+    --card: 0 0% 100%;
+    --card-foreground: 240 15% 12%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 240 15% 12%;
+    /* Deep Indigo Primary */
+    --primary: 245 75% 58%;
+    --primary-foreground: 0 0% 100%;
+    /* Electric Purple Secondary */
+    --secondary: 270 80% 65%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 240 20% 96%;
+    --muted-foreground: 240 8% 48%;
+    /* Cyan Accent */
+    --accent: 190 95% 55%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 240 15% 88%;
+    --input: 240 15% 88%;
+    --ring: 245 75% 58%;
+    /* Status colors - vibrant */
+    --success: 145 80% 48%;
+    --warning: 38 95% 58%;
+    --info: 200 95% 55%;
+    /* Chart colors - premium palette */
+    --chart-1: 245 75% 58%;
+    --chart-2: 270 80% 65%;
+    --chart-3: 190 95% 55%;
+    --chart-4: 38 95% 58%;
+    --chart-5: 145 80% 48%;
+    /* Sidebar - Deep Indigo theme */
+    --sidebar-background: 245 55% 15%;
+    --sidebar-foreground: 240 20% 98%;
+    --sidebar-primary: 245 75% 58%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 245 45% 22%;
+    --sidebar-accent-foreground: 240 20% 98%;
+    --sidebar-border: 245 45% 22%;
+    --sidebar-ring: 245 75% 58%;
+    /* AI gradient accent */
+    --ai-accent: 270 80% 65%;
+    --ai-accent-foreground: 0 0% 100%;
+  }
+
+  .dark {
+    /* Dark mode - Premium, Energetic atmosphere */
+    --background: 245 45% 8%;
+    --foreground: 240 20% 98%;
+    --card: 245 40% 12%;
+    --card-foreground: 240 20% 98%;
+    --popover: 245 40% 12%;
+    --popover-foreground: 240 20% 98%;
+    /* Deep Indigo Primary */
+    --primary: 245 75% 58%;
+    --primary-foreground: 0 0% 100%;
+    /* Electric Purple Secondary */
+    --secondary: 270 80% 65%;
+    --secondary-foreground: 0 0% 100%;
+    --muted: 245 35% 18%;
+    --muted-foreground: 240 15% 68%;
+    /* Cyan Accent */
+    --accent: 190 95% 55%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 63% 50%;
+    --destructive-foreground: 240 20% 98%;
+    --border: 245 30% 22%;
+    --input: 245 30% 22%;
+    --ring: 245 75% 58%;
+    /* Status colors - vibrant */
+    --success: 145 80% 48%;
+    --warning: 38 95% 58%;
+    --info: 200 95% 55%;
+    /* Chart colors - premium palette */
+    --chart-1: 245 75% 58%;
+    --chart-2: 270 80% 65%;
+    --chart-3: 190 95% 55%;
+    --chart-4: 38 95% 58%;
+    --chart-5: 145 80% 48%;
+    /* Sidebar - Darker Deep Indigo */
+    --sidebar-background: 245 55% 6%;
+    --sidebar-foreground: 240 20% 98%;
+    --sidebar-primary: 245 75% 58%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 245 45% 12%;
+    --sidebar-accent-foreground: 240 20% 98%;
+    --sidebar-border: 245 45% 12%;
+    --sidebar-ring: 245 75% 58%;
+    /* AI gradient accent */
+    --ai-accent: 270 80% 65%;
+    --ai-accent-foreground: 0 0% 100%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 3px;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    position: relative;
+  }
+
+  /* Premium gradient background */
+  body::before {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: -1;
+    opacity: 0.5;
+    background: 
+      radial-gradient(circle at 15% 25%, hsl(245 75% 58% / 0.12) 0%, transparent 45%),
+      radial-gradient(circle at 85% 75%, hsl(270 80% 65% / 0.12) 0%, transparent 45%),
+      radial-gradient(circle at 50% 50%, hsl(190 95% 55% / 0.08) 0%, transparent 50%),
+      radial-gradient(circle at 90% 15%, hsl(145 80% 48% / 0.08) 0%, transparent 40%);
+  }
+
+  /* Geometric mesh overlay */
+  body::after {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: -1;
+    opacity: 0.04;
+    background-image: 
+      linear-gradient(30deg, hsl(245 75% 58% / 0.15) 12%, transparent 12.5%, transparent 87%, hsl(245 75% 58% / 0.15) 87.5%, hsl(245 75% 58% / 0.15)),
+      linear-gradient(150deg, hsl(270 80% 65% / 0.15) 12%, transparent 12.5%, transparent 87%, hsl(270 80% 65% / 0.15) 87.5%, hsl(270 80% 65% / 0.15)),
+      linear-gradient(30deg, hsl(190 95% 55% / 0.1) 12%, transparent 12.5%, transparent 87%, hsl(190 95% 55% / 0.1) 87.5%, hsl(190 95% 55% / 0.1)),
+      linear-gradient(150deg, hsl(245 75% 58% / 0.1) 12%, transparent 12.5%, transparent 87%, hsl(245 75% 58% / 0.1) 87.5%, hsl(245 75% 58% / 0.1));
+    background-size: 90px 160px;
+    background-position: 0 0, 0 0, 45px 80px, 45px 80px;
+  }
+
+  .dark body::before {
+    opacity: 0.2;
+  }
+
+  .dark body::after {
+    opacity: 0.03;
+  }
+}
+
+@layer utilities {
+  /* Premium gradient utilities */
+  .gradient-primary {
+    background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--secondary)) 100%);
+  }
+
+  .gradient-accent {
+    background: linear-gradient(135deg, hsl(var(--secondary)) 0%, hsl(var(--accent)) 100%);
+  }
+
+  .gradient-success {
+    background: linear-gradient(135deg, hsl(var(--success)) 0%, hsl(var(--accent)) 100%);
+  }
+
+  .ai-gradient {
+    background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--ai-accent)) 100%);
+  }
+
+  .gradient-text {
+    background: linear-gradient(135deg, hsl(var(--primary)) 0%, hsl(var(--secondary)) 50%, hsl(var(--accent)) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  /* Glassmorphism effects */
+  .glass-card {
+    background: hsl(var(--card) / 0.7);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border: 1px solid hsl(var(--border) / 0.5);
+  }
+
+  .glass-strong {
+    background: hsl(var(--card) / 0.85);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid hsl(var(--border) / 0.6);
+  }
+
+  /* Premium card hover effects */
+  .card-hover {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .card-hover:hover {
+    transform: translateY(-4px);
+    box-shadow: 
+      0 12px 24px hsl(var(--primary) / 0.12),
+      0 4px 8px hsl(var(--primary) / 0.08);
+  }
+
+  .card-premium {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 
+      0 2px 8px hsl(var(--foreground) / 0.04),
+      0 1px 2px hsl(var(--foreground) / 0.06);
+  }
+
+  .card-premium:hover {
+    transform: translateY(-6px) scale(1.01);
+    box-shadow: 
+      0 16px 32px hsl(var(--primary) / 0.15),
+      0 8px 16px hsl(var(--primary) / 0.1),
+      0 0 0 1px hsl(var(--primary) / 0.1);
+  }
+
+  /* Smooth animations */
+  .animate-fade-in {
+    animation: fadeIn 0.4s ease-in-out;
+  }
+
+  .animate-slide-up {
+    animation: slideUp 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .animate-scale-in {
+    animation: scaleIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes slideUp {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes scaleIn {
+    from {
+      opacity: 0;
+      transform: scale(0.95);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1);
+    }
+  }
+
+  /* Status badges with premium styling */
+  .status-queue {
+    @apply bg-muted text-muted-foreground border border-border;
+  }
+  
+  .status-in-progress {
+    @apply bg-primary/10 text-primary border border-primary/30;
+    box-shadow: 0 0 12px hsl(var(--primary) / 0.15);
+  }
+  
+  .status-review {
+    @apply bg-warning/10 text-warning border border-warning/30;
+    box-shadow: 0 0 12px hsl(var(--warning) / 0.15);
+  }
+  
+  .status-completed {
+    @apply bg-success/10 text-success border border-success/30;
+    box-shadow: 0 0 12px hsl(var(--success) / 0.15);
+  }
+  
+  .priority-low {
+    @apply text-muted-foreground;
+  }
+  
+  .priority-medium {
+    @apply text-info;
+  }
+  
+  .priority-high {
+    @apply text-warning font-medium;
+  }
+
+  /* Button enhancements */
+  .btn-premium {
+    position: relative;
+    overflow: hidden;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .btn-premium::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    border-radius: 50%;
+    background: hsl(var(--primary-foreground) / 0.2);
+    transform: translate(-50%, -50%);
+    transition: width 0.6s, height 0.6s;
+  }
+
+  .btn-premium:hover::before {
+    width: 300px;
+    height: 300px;
+  }
+
+  .btn-premium:active {
+    transform: scale(0.98);
+  }
+
+  /* â”€â”€ Cinematic theme: ensure all content sits above the fixed canvas â”€â”€â”€ */
+  [data-cinematic] #root > *,
+  [data-cinematic] .app-layout-shell {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* Sidebar always readable on top of canvas */
+  [data-cinematic] aside {
+    position: relative;
+    z-index: 2;
+  }
+
+  /* Cards get a subtle backdrop so text stays readable over busy backgrounds */
+  [data-cinematic] [class*="rounded"] {
+    --tw-backdrop-blur: blur(0px);
+  }
+
+  /* Slightly frost card backgrounds for cinematic modes */
+  [data-cinematic] .card,
+  [data-cinematic] [data-slot="card"] {
+    background-color: hsl(var(--card) / 0.88);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+
+  /* Sidebar darkens to stay readable */
+  [data-cinematic] [data-sidebar="sidebar"] {
+    background-color: hsl(var(--sidebar-background) / 0.95);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+
+  /* Popover / dropdown always fully opaque */
+  [data-cinematic] [data-radix-popper-content-wrapper] {
+    z-index: 50 !important;
+  }
+
+  /* Font family from cinematic theme */
+  [data-cinematic] body {
+    font-family: var(--cinematic-font, inherit);
+  }
+}
+
+
