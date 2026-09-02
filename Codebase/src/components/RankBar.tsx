@@ -125,10 +125,10 @@ export default function RankBar() {
     const ri = getRankInfo(stats.rank);
     const badgeLine = topBadge ? `\nBadge earned: ${topBadge.name}` : '';
     return (
-      `ðŸŽ“ Academic milestone unlocked on AcadFlow!\n\n` +
-      `Rank: ${ri.rank} â€” ${ri.title}${badgeLine}\n` +
+      `Academic milestone unlocked on AcadFlow!\n\n` +
+      `Rank: ${ri.rank} - ${ri.title}${badgeLine}\n` +
       `Points: ${stats.points ?? stats.coins * 5}\n\n` +
-      `Tracking every assignment, project & deadline â€” consistency is key! ðŸš€\n\n` +
+      `Tracking every assignment, project & deadline - consistency is key!\n\n` +
       `#AcadFlow #StudentLife #AcademicGoals #TimeManagement`
     );
   }
@@ -197,7 +197,7 @@ export default function RankBar() {
             <Progress value={prog.pct} className="h-1.5" />
             <p className="text-xs text-muted-foreground">
               {isLegend
-                ? 'Maximum rank reached â€” Legend status!'
+                ? 'Maximum rank reached - Legend status!'
                 : `${prog.needed} pts to Rank ${stats.rank + 1} (${RANKS[stats.rank]?.title ?? ''})`}
             </p>
           </div>

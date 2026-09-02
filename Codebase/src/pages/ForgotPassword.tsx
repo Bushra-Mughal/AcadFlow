@@ -98,7 +98,7 @@ export default function ForgotPassword() {
                 </div>
 
                 <Button type="submit" className="w-full" disabled={loading}>
-                  {loading ? 'Sendingâ€¦' : 'Send reset link'}
+                  {loading ? 'Sending...' : 'Send reset link'}
                 </Button>
 
                 <div className="flex justify-center">

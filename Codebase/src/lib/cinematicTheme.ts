@@ -13,7 +13,7 @@ export type BackgroundAnimation =
 
 export interface CinematicCustomization {
   accentColor: string;          // hex
-  bgIntensity: number;          // 0â€“100
+  bgIntensity: number;          // 0-100
   animationSpeed: AnimationSpeed;
   fontStyle: FontStyle;
 }

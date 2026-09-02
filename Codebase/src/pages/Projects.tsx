@@ -166,7 +166,7 @@ export default function Projects() {
                 await supabase.rpc('award_points', { p_user_id: currentUser.id, p_action: 'team_member_invited' });
               }
             }
-            toast.success(`Successfully added ${successfulAdds.length} member(s) â€” +${successfulAdds.length * 15} pts`);
+            toast.success(`Successfully added ${successfulAdds.length} member(s) - +${successfulAdds.length * 15} pts`);
           }
           if (failedAdds.length > 0) {
             toast.warning(`Failed to add ${failedAdds.length} member(s). Please check the email addresses.`);
@@ -326,10 +326,10 @@ export default function Projects() {
 
           const pts = action === 'project_completed_ontime' ? 70
             : action === 'project_completed_onday' ? 50 : 15;
-          const rankMsg = result?.rank_changed ? ` Rank up to ${result.new_rank}! ðŸš€` : '';
+          const rankMsg = result?.rank_changed ? ` Rank up to ${result.new_rank}!` : '';
           
           if (action !== 'project_completed_late') {
-            toast.success(`Project completed! +${pts} pts ðŸŽ‰${rankMsg}`);
+            toast.success(`Project completed! +${pts} pts${rankMsg}`);
           } else {
             toast.success(`Project completed! +${pts} pts${rankMsg}`);
           }
@@ -337,7 +337,7 @@ export default function Projects() {
           // Show badge notifications
           if (newBadges && newBadges.length > 0) {
             newBadges.forEach((badge: any) => {
-              toast.success(`ðŸ† Badge Unlocked: ${badge.badge_name}!`, {
+              toast.success(`Badge Unlocked: ${badge.badge_name}!`, {
                 description: badge.badge_description,
                 duration: 5000,
               });

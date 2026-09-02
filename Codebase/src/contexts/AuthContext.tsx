@@ -5,7 +5,6 @@ import type { User } from '@supabase/supabase-js';
 interface Profile {
   id: string;
   email: string | null;
-  gmail: string | null;
   username: string | null;
   role: 'user' | 'admin';
   created_at: string;
@@ -17,8 +16,7 @@ interface AuthContextType {
   profile: Profile | null;
   loading: boolean;
   signIn: (username: string, password: string) => Promise<void>;
-  signUp: (username: string, password: string, gmail?: string) => Promise<void>;
-  signInWithGoogle: () => Promise<void>;
+  signUp: (username: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   checkUsernameAvailable: (username: string) => Promise<boolean>;
   resetPassword: (username: string) => Promise<void>;
@@ -80,12 +78,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function signIn(username: string, password: string) {
     if (!isSupabaseConfigured) throw new Error('Configure Supabase in .env.local before signing in.');
-    const email = `${username}@miaoda.com`;
+    const email = `${username.trim().toLowerCase()}@acadflow.local`;
     const { error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) throw error;
   }
 
-  async function signUp(username: string, password: string, gmail?: string) {
+  async function signUp(username: string, password: string) {
     if (!isSupabaseConfigured) throw new Error('Configure Supabase in .env.local before signing up.');
     if (!/^[a-zA-Z0-9_]+$/.test(username)) {
       throw new Error('Username can only contain letters, numbers, and underscores');
@@ -97,56 +95,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       throw new Error('Username must be 30 characters or fewer');
     }
 
-    // Validate Gmail if provided
-    const trimmedGmail = gmail?.trim().toLowerCase() || '';
-    if (trimmedGmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedGmail)) {
-      throw new Error('Please enter a valid Gmail address');
-    }
-
-    // Check username uniqueness
+    const normalizedUsername = username.trim();
     const { data: existing, error: checkError } = await supabase
       .from('profiles')
       .select('id')
-      .eq('username', username)
+      .eq('username', normalizedUsername)
       .maybeSingle();
     if (checkError) throw checkError;
     if (existing) throw new Error('Username is already taken. Please choose a different one.');
 
-    // Check Gmail uniqueness if provided
-    if (trimmedGmail) {
-      const { data: gmailExisting } = await supabase
-        .from('profiles')
-        .select('id')
-        .eq('gmail', trimmedGmail)
-        .maybeSingle();
-      if (gmailExisting) throw new Error('This Gmail is already linked to another account.');
-    }
-
-    const email = `${username}@miaoda.com`;
+    const email = `${normalizedUsername.toLowerCase()}@acadflow.local`;
     const { data, error } = await supabase.auth.signUp({ email, password });
     if (error) throw error;
 
-    // Persist username (and Gmail if provided) into the profiles row
     if (data.user) {
-      const updates: Record<string, string> = { username };
-      if (trimmedGmail) updates.gmail = trimmedGmail;
       const { error: profileError } = await supabase
         .from('profiles')
-        .update(updates)
+        .update({ username: normalizedUsername })
         .eq('id', data.user.id);
       if (profileError) console.error('Profile update error:', profileError);
     }
-  }
-
-  async function signInWithGoogle() {
-    if (!isSupabaseConfigured) throw new Error('Configure Supabase in .env.local before signing in.');
-    const { error } = await supabase.auth.signInWithOAuth({
-      provider: 'google',
-      options: {
-        redirectTo: `${window.location.origin}/`,
-      },
-    });
-    if (error) throw error;
   }
 
   async function signOut() {
@@ -157,7 +125,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function resetPassword(username: string) {
     if (!isSupabaseConfigured) throw new Error('Configure Supabase in .env.local before resetting a password.');
-    const email = `${username.trim().toLowerCase()}@miaoda.com`;
+    const email = `${username.trim().toLowerCase()}@acadflow.local`;
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}/reset-password`,
     });
@@ -183,7 +151,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     loading,
     signIn,
     signUp,
-    signInWithGoogle,
     signOut,
     checkUsernameAvailable,
     resetPassword,

@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 
 interface Props {
-  intensity: number;      // 0â€“100
+  intensity: number;      // 0-100
   speedMult: number;      // 0.5 / 1.0 / 2.0
   accentColor: string;    // hex
 }

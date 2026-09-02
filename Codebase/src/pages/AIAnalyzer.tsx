@@ -83,7 +83,7 @@ export default function AIAnalyzer() {
 
       // Save to history
       if (user) {
-        const preview = content.trim().slice(0, 120) + (content.trim().length > 120 ? 'â€¦' : '');
+        const preview = content.trim().slice(0, 120) + (content.trim().length > 120 ? '...' : '');
         await supabase.from('analysis_history').insert({
           user_id: user.id,
           content_preview: preview,
@@ -223,7 +223,7 @@ export default function AIAnalyzer() {
                 <Textarea
                   value={content}
                   onChange={(e) => setContent(e.target.value)}
-                  placeholder="Paste your essay, report, code, or draft here for detailed analysisâ€¦"
+                  placeholder="Paste your essay, report, code, or draft here for detailed analysis..."
                   rows={12}
                   disabled={analyzing}
                   className="font-mono text-sm resize-none leading-relaxed"
@@ -236,7 +236,7 @@ export default function AIAnalyzer() {
                   {analyzing ? (
                     <>
                       <span className="mr-2 inline-block h-3.5 w-3.5 border-2 border-current border-t-transparent rounded-full animate-spin" />
-                      Analyzingâ€¦
+                      Analyzing...
                     </>
                   ) : (
                     <>
@@ -299,7 +299,7 @@ export default function AIAnalyzer() {
                     <ul className="space-y-1.5">
                       {activeResult.grammarAndSpelling.issues.map((issue, i) => (
                         <li key={i} className="text-sm text-muted-foreground text-pretty flex gap-2">
-                          <span className="shrink-0 text-muted-foreground/40 mt-0.5">â€“</span>
+                          <span className="shrink-0 text-muted-foreground/40 mt-0.5">-</span>
                           <span>{issue}</span>
                         </li>
                       ))}

@@ -22,7 +22,7 @@ export async function trackActivity(
     if (profile?.username) {
       userEmail = `${profile.username}@acadflow`;
     } else if (profile?.email) {
-      // Google OAuth users have a real email â€” strip domain and show @acadflow
+      // Legacy accounts may contain an email; show only the local account name.
       const localPart = profile.email.split('@')[0];
       userEmail = `${localPart}@acadflow`;
     }
@@ -103,7 +103,7 @@ export function extractError(err: unknown): string {
     if (e.details) parts.push(`Details: ${e.details}`);
     if (e.hint) parts.push(`Hint: ${e.hint}`);
     if (e.code) parts.push(`Code: ${e.code}`);
-    if (parts.length) return parts.join(' â€” ');
+    if (parts.length) return parts.join(' - ');
   }
   return 'An unexpected error occurred';
 }

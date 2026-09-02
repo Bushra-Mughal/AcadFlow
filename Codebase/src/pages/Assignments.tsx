@@ -164,10 +164,10 @@ export default function Assignments() {
 
           const pts = action === 'assignment_completed_ontime' ? 50
             : action === 'assignment_completed_onday' ? 30 : 10;
-          const rankMsg = result?.rank_changed ? ` Rank up to ${result.new_rank}! ðŸš€` : '';
+          const rankMsg = result?.rank_changed ? ` Rank up to ${result.new_rank}!` : '';
           
           if (action !== 'assignment_completed_late') {
-            toast.success(`Status updated! +${pts} pts for on-time completion ðŸŽ‰${rankMsg}`);
+            toast.success(`Status updated! +${pts} pts for on-time completion${rankMsg}`);
           } else {
             toast.success(`Status updated! +${pts} pts${rankMsg}`);
           }
@@ -175,7 +175,7 @@ export default function Assignments() {
           // Show badge notifications
           if (newBadges && newBadges.length > 0) {
             newBadges.forEach((badge: any) => {
-              toast.success(`ðŸ† Badge Unlocked: ${badge.badge_name}!`, {
+              toast.success(`Badge Unlocked: ${badge.badge_name}!`, {
                 description: badge.badge_description,
                 duration: 5000,
               });

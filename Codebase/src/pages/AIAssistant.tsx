@@ -35,7 +35,7 @@ function renderMarkdown(text: string): React.ReactNode[] {
         <ul key={key++} className="space-y-0.5 my-1.5 pl-1">
           {listBuffer.map((item, i) => (
             <li key={i} className="text-sm leading-relaxed flex gap-2">
-              <span className="shrink-0 opacity-40">â€“</span>
+              <span className="shrink-0 opacity-40">-</span>
               <span>{inlineMarkdown(item)}</span>
             </li>
           ))}
@@ -104,7 +104,7 @@ function inlineMarkdown(text: string): React.ReactNode {
 // â”€â”€ Component â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 const SESSION_KEY = 'acadflow_chat_session';
 
-// Shape sent to edge function (lean â€” no internal IDs needed)
+// Shape sent to edge function (lean - no internal IDs needed)
 interface AssignmentContext {
   title: string;
   course?: string;
@@ -547,7 +547,7 @@ export default function AIAssistant() {
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); }
               }}
-              placeholder="Ask me anythingâ€¦ (Enter to send, Shift+Enter for new line)"
+              placeholder="Ask me anything... (Enter to send, Shift+Enter for new line)"
               rows={1}
               disabled={loading}
               className="resize-none border-0 p-0 shadow-none focus-visible:ring-0 bg-transparent text-sm min-h-[1.5rem] max-h-40 overflow-y-auto"
@@ -562,7 +562,7 @@ export default function AIAssistant() {
             </Button>
           </div>
           <p className="text-center text-xs text-muted-foreground/60 mt-2">
-            AI can make mistakes â€” verify important information
+            AI can make mistakes - verify important information
           </p>
         </div>
       </div>

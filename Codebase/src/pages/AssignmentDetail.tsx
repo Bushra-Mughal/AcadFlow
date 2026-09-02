@@ -305,12 +305,12 @@ export default function AssignmentDetail() {
           p_user_id: user.id,
         });
         
-        toast.success('File saved successfully! +2 coins ðŸŽ‰');
+        toast.success('File saved successfully! +2 coins');
         
         // Show badge notifications
         if (newBadges && newBadges.length > 0) {
           newBadges.forEach((badge: any) => {
-            toast.success(`ðŸ† Badge Unlocked: ${badge.badge_name}!`, {
+            toast.success(`Badge Unlocked: ${badge.badge_name}!`, {
               description: badge.badge_description,
               duration: 5000,
             });

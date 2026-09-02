@@ -34,12 +34,12 @@ export default function ActivityLog() {
   }
 
   function formatUserEmail(raw: string): string {
-    // Normalise legacy `username@miaoda.com` and any `anything@*.com` to `username@acadflow`
+    // Normalize legacy account identifiers to the local account display format.
     if (!raw || raw === 'Unknown') return raw;
     if (raw.endsWith('@miaoda.com') || raw.endsWith('@miaoda')) {
       return raw.split('@')[0] + '@acadflow';
     }
-    // Already in new format or a real email from Google OAuth â€” show local@acadflow
+    // Keep the existing display format for other account identifiers.
     if (raw.includes('@') && !raw.endsWith('@acadflow')) {
       return raw.split('@')[0] + '@acadflow';
     }

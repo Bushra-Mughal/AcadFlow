@@ -13,7 +13,7 @@ interface Orb {
 
 /**
  * Minimal animated background for auth pages.
- * Soft, slowly drifting gradient orbs â€” no harsh colors, no distracting motion.
+ * Soft, slowly drifting gradient orbs - no harsh colors, no distracting motion.
  * Adapts to light / dark mode via opacity only (no hardcoded colors).
  */
 export function LoginBackground() {

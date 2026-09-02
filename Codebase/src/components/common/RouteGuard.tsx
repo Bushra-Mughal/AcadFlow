@@ -15,7 +15,7 @@ export function RouteGuard({ children }: { children: React.ReactNode }) {
         <LoginBackground />
         <div className="relative z-10 flex flex-col items-center gap-3">
           <div className="h-8 w-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-          <p className="text-sm text-muted-foreground">Loadingâ€¦</p>
+          <p className="text-sm text-muted-foreground">Loading...</p>
         </div>
       </div>
     );

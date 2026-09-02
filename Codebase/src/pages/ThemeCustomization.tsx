@@ -221,7 +221,7 @@ function CustomizationPanel({ theme }: { theme: CinematicTheme }) {
   return (
     <div className="rounded-xl border border-border/60 p-4 space-y-5">
       <p className="text-xs font-semibold text-muted-foreground uppercase tracking-widest">
-        Customize â€” {theme.name}
+        Customize - {theme.name}
       </p>
 
       {/* Accent color */}
@@ -330,8 +330,8 @@ function CinematicTab() {
         <div>
           <p className="text-sm font-medium">Cinematic Themes</p>
           <p className="text-xs text-muted-foreground mt-0.5 text-pretty leading-relaxed">
-            Movie-inspired immersive experiences. Each theme transforms the entire UI â€”
-            colors, fonts, button shapes â€” and adds a living animated background.
+            Movie-inspired immersive experiences. Each theme transforms the entire UI -
+            colors, fonts, button shapes - and adds a living animated background.
           </p>
         </div>
       </div>
@@ -390,7 +390,7 @@ export default function ThemeCustomization() {
       <div className="space-y-1">
         <h1 className="text-2xl font-semibold text-balance">Theme</h1>
         <p className="text-sm text-muted-foreground text-pretty">
-          Personalize your workspace â€” from subtle color tweaks to full cinematic immersion.
+          Personalize your workspace - from subtle color tweaks to full cinematic immersion.
         </p>
       </div>
 

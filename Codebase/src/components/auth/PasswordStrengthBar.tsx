@@ -1,6 +1,6 @@
-// Minimal password strength indicator â€” 4-segment bar with label
+// Minimal password strength indicator - 4-segment bar with label
 interface Strength {
-  score: number;       // 0â€“4
+  score: number;       // 0-4
   label: string;
   color: string;       // Tailwind bg class (semantic-safe static string)
   labelColor: string;  // Tailwind text class
@@ -16,7 +16,7 @@ function evaluate(password: string): Strength {
   if (/[0-9]/.test(password)) score++;
   if (/[^A-Za-z0-9]/.test(password)) score++;
 
-  // Map raw score (0â€“5) to display score (1â€“4)
+  // Map raw score (0-5) to display score (1-4)
   const display = Math.min(4, Math.max(1, score));
 
   const levels: Record<number, Omit<Strength, 'score'>> = {

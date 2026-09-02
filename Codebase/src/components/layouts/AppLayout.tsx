@@ -64,7 +64,7 @@ export function AppLayout({ children }: AppLayoutProps) {
     }
   }, [theme, isAuthPage]);
 
-  // On auth pages render children only â€” no sidebar, no mobile menu
+  // On auth pages render children only - no sidebar, no mobile menu
   if (isAuthPage) {
     return <>{children}</>;
   }

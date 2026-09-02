@@ -503,7 +503,7 @@ export default function Files() {
                     value={parentFolderId ?? ''}
                     onChange={e => setParentFolderId(e.target.value || null)}
                   >
-                    <option value="">â€” Root level â€”</option>
+                    <option value="">- Root level -</option>
                     {folders.map(f => (
                       <option key={f.id} value={f.id}>{f.name}</option>
                     ))}
@@ -513,7 +513,7 @@ export default function Files() {
               <DialogFooter>
                 <Button variant="outline" onClick={() => setCreateFolderOpen(false)}>Cancel</Button>
                 <Button onClick={handleCreateFolder} disabled={creatingFolder}>
-                  {creatingFolder ? 'Creatingâ€¦' : 'Create'}
+                  {creatingFolder ? 'Creating...' : 'Create'}
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -524,7 +524,7 @@ export default function Files() {
           <Button asChild disabled={uploading}>
             <label htmlFor="file-upload" className="cursor-pointer">
               <Upload className="mr-2 h-4 w-4" />
-              {uploading ? 'Uploadingâ€¦' : 'Upload File'}
+              {uploading ? 'Uploading...' : 'Upload File'}
             </label>
           </Button>
         </div>

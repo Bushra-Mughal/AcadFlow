@@ -163,7 +163,7 @@ export default function ResetPassword() {
                 </div>
 
                 <Button type="submit" className="w-full" disabled={loading || !sessionReady}>
-                  {loading ? 'Updatingâ€¦' : 'Reset password'}
+                  {loading ? 'Updating...' : 'Reset password'}
                 </Button>
 
                 <div className="flex justify-center">
