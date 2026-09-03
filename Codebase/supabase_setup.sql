@@ -340,17 +340,64 @@ CREATE POLICY "Members can view membership" ON public.project_members
   );
 
 -- FILES
-CREATE POLICY "Users own their files" ON public.files
-  FOR ALL TO authenticated USING (user_id = auth.uid());
+-- Own files, plus files linked to a team project you created or joined,
+-- plus files linked to your own assignments.
+CREATE POLICY "files_select" ON public.files
+  FOR SELECT TO authenticated USING (
+    user_id = auth.uid()
+    OR (project_id IS NOT NULL AND (
+      is_project_creator(project_id, auth.uid()) OR is_project_member(project_id, auth.uid())
+    ))
+    OR (assignment_id IS NOT NULL AND EXISTS (
+      SELECT 1 FROM public.assignments a
+      WHERE a.id = files.assignment_id AND a.user_id = auth.uid()
+    ))
+  );
+CREATE POLICY "files_insert" ON public.files
+  FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid());
+CREATE POLICY "files_update" ON public.files
+  FOR UPDATE TO authenticated
+  USING (
+    user_id = auth.uid()
+    OR (project_id IS NOT NULL AND (
+      is_project_creator(project_id, auth.uid()) OR is_project_member(project_id, auth.uid())
+    ))
+  )
+  WITH CHECK (
+    user_id = auth.uid()
+    OR (project_id IS NOT NULL AND (
+      is_project_creator(project_id, auth.uid()) OR is_project_member(project_id, auth.uid())
+    ))
+  );
+CREATE POLICY "files_delete" ON public.files
+  FOR DELETE TO authenticated
+  USING (
+    user_id = auth.uid()
+    OR (project_id IS NOT NULL AND (
+      is_project_creator(project_id, auth.uid()) OR is_project_member(project_id, auth.uid())
+    ))
+  );
 
 -- FILE_FOLDERS
 CREATE POLICY "Users own their folders" ON public.file_folders
   FOR ALL TO authenticated USING (user_id = auth.uid());
 
 -- ACTIVITIES
-CREATE POLICY "Users view own activities" ON public.activities
-  FOR SELECT TO authenticated USING (user_id = auth.uid());
-CREATE POLICY "System can insert activities" ON public.activities
+-- Team log sharing: activities recorded against a team project (project_id
+-- set) are visible to the project creator and every member, so the whole
+-- team sees the same log.
+CREATE POLICY "activities_select" ON public.activities
+  FOR SELECT TO authenticated USING (
+    user_id = auth.uid()
+    OR (assignment_id IS NOT NULL AND EXISTS (
+      SELECT 1 FROM public.assignments a
+      WHERE a.id = activities.assignment_id AND a.user_id = auth.uid()
+    ))
+    OR (project_id IS NOT NULL AND (
+      is_project_creator(project_id, auth.uid()) OR is_project_member(project_id, auth.uid())
+    ))
+  );
+CREATE POLICY "activities_insert" ON public.activities
   FOR INSERT TO authenticated WITH CHECK (user_id = auth.uid());
 
 -- CHAT_MESSAGES
@@ -360,6 +407,90 @@ CREATE POLICY "Users own their chat messages" ON public.chat_messages
 -- ANALYSIS_HISTORY
 CREATE POLICY "Users own their analysis history" ON public.analysis_history
   FOR ALL TO authenticated USING (user_id = auth.uid());
+
+-- ============================================
+-- 16.5 STORAGE BUCKET (user-files) & POLICIES
+-- ============================================
+-- The app uploads to this bucket under my-files/<user_id>/<file> and opens
+-- files with getPublicUrl(), so the bucket must be public. No MIME-type
+-- restrictions (the app detects code/text/video types itself).
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES ('user-files', 'user-files', true, 52428800, NULL)
+ON CONFLICT (id) DO UPDATE
+  SET public = true,
+      file_size_limit = 52428800,
+      allowed_mime_types = NULL;
+
+-- True when a storage object belongs to a file linked to a project the given
+-- user created or joined. SECURITY DEFINER so team members can open, edit
+-- and download each other's shared project files.
+CREATE OR REPLACE FUNCTION public.storage_object_accessible(p_object_name text, p_user uuid)
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER SET search_path = public
+AS $$
+  SELECT EXISTS (
+    SELECT 1 FROM public.files f
+    WHERE f.file_path = p_object_name
+      AND f.project_id IS NOT NULL
+      AND (
+        is_project_creator(f.project_id, p_user)
+        OR is_project_member(f.project_id, p_user)
+      )
+  );
+$$;
+
+GRANT EXECUTE ON FUNCTION public.storage_object_accessible(text, uuid) TO authenticated;
+
+CREATE POLICY "user_files_insert" ON storage.objects
+  FOR INSERT TO authenticated
+  WITH CHECK (
+    bucket_id = 'user-files'
+    AND (storage.foldername(name))[1] = 'my-files'
+    AND (storage.foldername(name))[2] = auth.uid()::text
+  );
+
+CREATE POLICY "user_files_select" ON storage.objects
+  FOR SELECT TO authenticated
+  USING (
+    bucket_id = 'user-files'
+    AND (
+      (storage.foldername(name))[1] = auth.uid()::text
+      OR (storage.foldername(name))[2] = auth.uid()::text
+      OR public.storage_object_accessible(name, auth.uid())
+    )
+  );
+
+CREATE POLICY "user_files_update" ON storage.objects
+  FOR UPDATE TO authenticated
+  USING (
+    bucket_id = 'user-files'
+    AND (
+      (storage.foldername(name))[1] = auth.uid()::text
+      OR (storage.foldername(name))[2] = auth.uid()::text
+      OR public.storage_object_accessible(name, auth.uid())
+    )
+  )
+  WITH CHECK (
+    bucket_id = 'user-files'
+    AND (
+      (storage.foldername(name))[1] = auth.uid()::text
+      OR (storage.foldername(name))[2] = auth.uid()::text
+      OR public.storage_object_accessible(name, auth.uid())
+    )
+  );
+
+CREATE POLICY "user_files_delete" ON storage.objects
+  FOR DELETE TO authenticated
+  USING (
+    bucket_id = 'user-files'
+    AND (
+      (storage.foldername(name))[1] = auth.uid()::text
+      OR (storage.foldername(name))[2] = auth.uid()::text
+      OR public.storage_object_accessible(name, auth.uid())
+    )
+  );
 
 -- ============================================
 -- 17. AUTO-UPDATE TRIGGERS
@@ -393,76 +524,250 @@ CREATE TRIGGER update_user_stats_updated_at
 -- ============================================
 -- 18. RPC FUNCTIONS
 -- ============================================
-CREATE OR REPLACE FUNCTION public.award_points(p_user_id uuid, p_points integer)
+-- Progressive ranks: 1 Beginner .. 7 Legend
+CREATE OR REPLACE FUNCTION public.get_rank_from_points(p_points integer)
+RETURNS integer
+LANGUAGE sql IMMUTABLE
+AS $$
+  SELECT CASE
+    WHEN p_points >= 4000 THEN 7
+    WHEN p_points >= 2000 THEN 6
+    WHEN p_points >= 1000 THEN 5
+    WHEN p_points >= 500  THEN 4
+    WHEN p_points >= 250  THEN 3
+    WHEN p_points >= 100  THEN 2
+    ELSE 1
+  END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.get_points_for_rank(p_rank integer)
+RETURNS integer
+LANGUAGE sql IMMUTABLE
+AS $$
+  SELECT CASE
+    WHEN p_rank <= 1 THEN 0
+    WHEN p_rank = 2  THEN 100
+    WHEN p_rank = 3  THEN 250
+    WHEN p_rank = 4  THEN 500
+    WHEN p_rank = 5  THEN 1000
+    WHEN p_rank = 6  THEN 2000
+    ELSE 4000
+  END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.update_rank_from_points()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  NEW.rank := public.get_rank_from_points(NEW.points);
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER trg_update_rank_on_points
+  BEFORE UPDATE OF points ON public.user_stats
+  FOR EACH ROW EXECUTE FUNCTION public.update_rank_from_points();
+
+-- award_points(p_user_id, p_action) — the signature the frontend calls.
+CREATE OR REPLACE FUNCTION public.award_points(
+  p_user_id uuid,
+  p_action  text,
+  p_points  integer DEFAULT NULL
+)
 RETURNS json
 LANGUAGE plpgsql
 SECURITY DEFINER SET search_path = public
 AS $$
 DECLARE
-  v_new_points integer;
+  v_pts      integer;
+  v_old_rank integer;
   v_new_rank integer;
 BEGIN
-  UPDATE public.user_stats
-  SET points = points + p_points
-  WHERE user_id = p_user_id
-  RETURNING points INTO v_new_points;
+  v_pts := COALESCE(p_points,
+    CASE p_action
+      WHEN 'assignment_completed_ontime'   THEN 50
+      WHEN 'assignment_completed_onday'    THEN 30
+      WHEN 'assignment_completed_late'     THEN 10
+      WHEN 'assignment_status_progress'    THEN 5
+      WHEN 'assignment_status_review'      THEN 10
+      WHEN 'project_completed_ontime'      THEN 70
+      WHEN 'project_completed_onday'       THEN 50
+      WHEN 'project_completed_late'        THEN 15
+      WHEN 'project_status_progress'       THEN 5
+      WHEN 'project_status_review'         THEN 10
+      WHEN 'team_member_invited'           THEN 15
+      WHEN 'file_uploaded'                 THEN 5
+      WHEN 'file_edited'                   THEN 5
+      WHEN 'ai_session'                    THEN 10
+      ELSE 5
+    END
+  );
 
-  v_new_rank := CASE
-    WHEN v_new_points < 100 THEN 1
-    WHEN v_new_points < 250 THEN 2
-    WHEN v_new_points < 500 THEN 3
-    WHEN v_new_points < 1000 THEN 4
-    WHEN v_new_points < 2000 THEN 5
-    WHEN v_new_points < 5000 THEN 6
-    ELSE 7
-  END;
+  INSERT INTO public.user_stats (user_id, points, coins, rank)
+  VALUES (p_user_id, v_pts, GREATEST(1, v_pts / 10), public.get_rank_from_points(v_pts))
+  ON CONFLICT (user_id) DO NOTHING;
+
+  SELECT rank INTO v_old_rank FROM public.user_stats WHERE user_id = p_user_id;
 
   UPDATE public.user_stats
-  SET rank = v_new_rank, last_rank_update = now()
+  SET
+    points = points + v_pts,
+    coins  = coins + GREATEST(1, v_pts / 10),
+    on_time_submissions = on_time_submissions +
+      CASE WHEN p_action IN ('assignment_completed_ontime','assignment_completed_onday') THEN 1 ELSE 0 END,
+    total_submissions = total_submissions +
+      CASE WHEN p_action LIKE 'assignment_completed%' THEN 1 ELSE 0 END,
+    assignments_completed = assignments_completed +
+      CASE WHEN p_action LIKE 'assignment_completed%' THEN 1 ELSE 0 END,
+    projects_completed = projects_completed +
+      CASE WHEN p_action LIKE 'project_completed%' THEN 1 ELSE 0 END,
+    on_time_projects = on_time_projects +
+      CASE WHEN p_action IN ('project_completed_ontime','project_completed_onday') THEN 1 ELSE 0 END,
+    team_members_invited = team_members_invited +
+      CASE WHEN p_action = 'team_member_invited' THEN 1 ELSE 0 END,
+    files_uploaded = files_uploaded +
+      CASE WHEN p_action = 'file_uploaded' THEN 1 ELSE 0 END,
+    ai_sessions = ai_sessions +
+      CASE WHEN p_action = 'ai_session' THEN 1 ELSE 0 END,
+    file_edits = file_edits +
+      CASE WHEN p_action = 'file_edited' THEN 1 ELSE 0 END,
+    updated_at = now()
   WHERE user_id = p_user_id;
 
-  RETURN json_build_object('points', v_new_points, 'rank', v_new_rank);
+  SELECT rank INTO v_new_rank FROM public.user_stats WHERE user_id = p_user_id;
+
+  RETURN json_build_object(
+    'points_awarded', v_pts,
+    'rank_changed',   v_new_rank <> v_old_rank,
+    'old_rank',       v_old_rank,
+    'new_rank',       v_new_rank
+  );
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.award_points TO authenticated;
+GRANT EXECUTE ON FUNCTION public.award_points(uuid, text, integer) TO authenticated;
 
-CREATE OR REPLACE FUNCTION public.check_and_award_badges(p_user_id uuid)
-RETURNS TABLE(badge_id uuid, badge_name text)
+CREATE OR REPLACE FUNCTION public.award_coins_for_submission(
+  p_user_id      uuid,
+  p_is_on_time   boolean,
+  p_coins_amount integer DEFAULT 5
+)
+RETURNS void
 LANGUAGE plpgsql
 SECURITY DEFINER SET search_path = public
 AS $$
 DECLARE
-  r badges%rowtype;
-  v_current integer;
+  v_action text;
 BEGIN
-  FOR r IN SELECT * FROM public.badges LOOP
-    IF EXISTS (
+  v_action := CASE WHEN p_is_on_time THEN 'assignment_completed_ontime' ELSE 'assignment_completed_late' END;
+  PERFORM public.award_points(p_user_id, v_action);
+END;
+$$;
+
+CREATE OR REPLACE FUNCTION public.award_coins_for_file_edit(
+  p_user_id      uuid,
+  p_coins_amount integer DEFAULT 2
+)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER SET search_path = public
+AS $$
+BEGIN
+  PERFORM public.award_points(p_user_id, 'file_edited');
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.award_coins_for_submission(uuid, boolean, integer) TO authenticated;
+GRANT EXECUTE ON FUNCTION public.award_coins_for_file_edit(uuid, integer) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.update_submission_streak(p_user_id uuid)
+RETURNS void
+LANGUAGE plpgsql
+SECURITY DEFINER SET search_path = public
+AS $$
+DECLARE
+  last_date  date;
+  today_date date;
+  new_streak integer;
+BEGIN
+  today_date := CURRENT_DATE;
+
+  SELECT last_submission_date INTO last_date
+  FROM public.user_stats
+  WHERE user_id = p_user_id;
+
+  IF last_date IS NULL THEN
+    new_streak := 1;
+  ELSIF last_date = today_date THEN
+    RETURN;
+  ELSIF last_date = today_date - INTERVAL '1 day' THEN
+    new_streak := (SELECT current_streak FROM public.user_stats WHERE user_id = p_user_id) + 1;
+  ELSE
+    new_streak := 1;
+  END IF;
+
+  UPDATE public.user_stats
+  SET
+    current_streak = new_streak,
+    longest_streak = GREATEST(longest_streak, new_streak),
+    last_submission_date = today_date
+  WHERE user_id = p_user_id;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.update_submission_streak(uuid) TO authenticated;
+
+CREATE OR REPLACE FUNCTION public.check_and_award_badges(p_user_id uuid)
+RETURNS TABLE(newly_unlocked_badge_id uuid, badge_name text, badge_description text, badge_icon text)
+LANGUAGE plpgsql
+SECURITY DEFINER SET search_path = public
+AS $$
+DECLARE
+  user_stat RECORD;
+  badge RECORD;
+  current_value integer;
+  badge_unlocked boolean;
+BEGIN
+  SELECT * INTO user_stat FROM public.user_stats WHERE user_id = p_user_id;
+
+  IF NOT FOUND THEN
+    RETURN;
+  END IF;
+
+  FOR badge IN SELECT * FROM public.badges ORDER BY display_order LOOP
+    SELECT EXISTS(
       SELECT 1 FROM public.user_badges
-      WHERE user_id = p_user_id AND badge_id = r.id
-    ) THEN
-      CONTINUE;
-    END IF;
+      WHERE user_id = p_user_id AND badge_id = badge.id
+    ) INTO badge_unlocked;
 
-    SELECT CASE r.criteria_type
-      WHEN 'on_time_submissions' THEN on_time_submissions
-      WHEN 'rank' THEN rank
-      WHEN 'file_edits' THEN file_edits
-      WHEN 'streak' THEN current_streak
-      WHEN 'total_submissions' THEN total_submissions
-      ELSE 0
-    END INTO v_current
-    FROM public.user_stats WHERE user_id = p_user_id;
+    IF NOT badge_unlocked THEN
+      current_value := CASE badge.criteria_type
+        WHEN 'on_time_submissions' THEN user_stat.on_time_submissions
+        WHEN 'rank' THEN user_stat.rank
+        WHEN 'file_edits' THEN user_stat.file_edits
+        WHEN 'streak' THEN user_stat.longest_streak
+        WHEN 'total_submissions' THEN user_stat.total_submissions
+        ELSE 0
+      END;
 
-    IF v_current >= r.criteria_value THEN
-      INSERT INTO public.user_badges (user_id, badge_id) VALUES (p_user_id, r.id);
-      RETURN QUERY SELECT r.id, r.name;
+      IF current_value >= badge.criteria_value THEN
+        INSERT INTO public.user_badges (user_id, badge_id)
+        VALUES (p_user_id, badge.id)
+        ON CONFLICT (user_id, badge_id) DO NOTHING;
+
+        newly_unlocked_badge_id := badge.id;
+        badge_name := badge.name;
+        badge_description := badge.description;
+        badge_icon := badge.icon;
+        RETURN NEXT;
+      END IF;
     END IF;
   END LOOP;
 END;
 $$;
 
-GRANT EXECUTE ON FUNCTION public.check_and_award_badges TO authenticated;
+GRANT EXECUTE ON FUNCTION public.check_and_award_badges(uuid) TO authenticated;
 
 -- ============================================
 -- 19. SEED BADGES
