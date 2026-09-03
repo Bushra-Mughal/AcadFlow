@@ -1,27 +1,43 @@
-import { corsHeaders } from '../_shared/cors.ts';
+import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
+import { withSupabase } from 'jsr:@supabase/server@^1';
 
-Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
-  }
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
 
-  try {
-    const { content, contentType } = await req.json();
-
-    if (!content || typeof content !== 'string') {
-      return new Response(
-        JSON.stringify({ error: 'Content is required' }),
-        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
+export default {
+  fetch: withSupabase({ auth: 'user' }, async (req: Request) => {
+    if (req.method === 'OPTIONS') {
+      return new Response(null, { headers: corsHeaders });
     }
 
-    const apiKey = Deno.env.get('INTEGRATIONS_API_KEY');
-    if (!apiKey) {
-      return new Response(
-        JSON.stringify({ error: 'API key not configured' }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
+    try {
+      const { content, contentType } = await req.json();
+
+      if (!content || typeof content !== 'string') {
+        return new Response(
+          JSON.stringify({ error: 'Content is required' }),
+          { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+
+      const apiKey = Deno.env.get('INTEGRATIONS_API_KEY') || Deno.env.get('GOOGLE_API_KEY') || Deno.env.get('GEMINI_API_KEY');
+      if (!apiKey) {
+        return new Response(
+          JSON.stringify({
+            error: 'AI backend is not configured. Set INTEGRATIONS_API_KEY (or GEMINI_API_KEY) in your Supabase Edge Function secrets.',
+          }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
+      if (apiKey.startsWith('sb_publishable_') || apiKey.startsWith('sb_secret_')) {
+        return new Response(
+          JSON.stringify({ error: 'Invalid AI gateway secret. Do not use a Supabase publishable or secret key as the AI API key.' }),
+          { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        );
+      }
 
     const prompt = `You are an expert academic content analyzer for AcadFlow. Analyze the following student work thoroughly and provide constructive, helpful feedback.
 
@@ -75,13 +91,13 @@ Provide a comprehensive analysis in the following JSON format:
 
 Be constructive, specific, and encouraging. Focus on helping the student improve. Don't be harsh.`;
 
-    const apiUrl = 'https://app-biof3pfof94x-api-VaOwP8E7dJqa.gateway.appmedo.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse';
+    const apiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse';
 
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Gateway-Authorization': `Bearer ${apiKey}`,
+        'x-goog-api-key': apiKey,
       },
       body: JSON.stringify({
         contents: [
@@ -103,6 +119,7 @@ Be constructive, specific, and encouraging. Focus on helping the student improve
     }
 
     let fullText = '';
+    let pending = '';
     const reader = response.body?.getReader();
     const decoder = new TextDecoder();
 
@@ -111,8 +128,9 @@ Be constructive, specific, and encouraging. Focus on helping the student improve
         const { done, value } = await reader.read();
         if (done) break;
 
-        const chunk = decoder.decode(value);
-        const lines = chunk.split('\n');
+        pending += decoder.decode(value, { stream: true });
+        const lines = pending.split('\n');
+        pending = lines.pop() || '';
 
         for (const line of lines) {
           if (line.startsWith('data: ')) {
@@ -125,11 +143,22 @@ Be constructive, specific, and encouraging. Focus on helping the student improve
               if (text) {
                 fullText += text;
               }
-            } catch (e) {
-              console.error('Parse error:', e);
+            } catch (error) {
+              console.error('Parse error:', error);
             }
           }
         }
+      }
+    }
+
+    pending += decoder.decode();
+    if (pending.startsWith('data: ')) {
+      try {
+        const parsed = JSON.parse(pending.slice(6));
+        const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (text) fullText += text;
+      } catch (error) {
+        console.error('Final parse error:', error);
       }
     }
 
@@ -148,13 +177,14 @@ Be constructive, specific, and encouraging. Focus on helping the student improve
       JSON.stringify(analysis),
       { headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Error:', error);
     return new Response(
-      JSON.stringify({ error: error.message }),
+      JSON.stringify({ error: error instanceof Error ? error.message : 'Internal server error' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
-});
+  }),
+};
 
 

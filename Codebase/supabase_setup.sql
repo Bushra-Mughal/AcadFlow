@@ -267,19 +267,21 @@ END;
 $$;
 
 CREATE OR REPLACE FUNCTION public.find_user_by_email(p_email text)
-RETURNS uuid
-LANGUAGE plpgsql
-SECURITY DEFINER SET search_path = public
+RETURNS TABLE(id uuid, email text, username text)
+LANGUAGE sql
+SECURITY DEFINER
+STABLE
+SET search_path = public
 AS $$
-DECLARE v_user_id uuid;
-BEGIN
-  SELECT id INTO v_user_id
-  FROM public.profiles
-  WHERE lower(email) = lower(p_email) OR lower(gmail) = lower(p_email)
+  SELECT p.id, p.email, p.username
+  FROM public.profiles p
+  WHERE lower(p.username) = lower(trim(p_email))
+    AND trim(p_email) ~ '^[A-Za-z0-9_]+$'
   LIMIT 1;
-  RETURN v_user_id;
-END;
 $$;
+
+REVOKE ALL ON FUNCTION public.find_user_by_email(text) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.find_user_by_email(text) TO authenticated;
 
 -- ============================================
 -- 16. RLS POLICIES

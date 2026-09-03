@@ -300,12 +300,15 @@ export default function AIAssistant() {
       const reader = response.body?.getReader();
       if (!reader) throw new Error('No response body');
       const decoder = new TextDecoder();
+      let pending = '';
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
-        const chunk = decoder.decode(value);
-        for (const line of chunk.split('\n')) {
+        pending += decoder.decode(value, { stream: true });
+        const lines = pending.split('\n');
+        pending = lines.pop() || '';
+        for (const line of lines) {
           if (line.startsWith('data: ')) {
             const dataStr = line.slice(6);
             if (dataStr === '[DONE]') continue;
@@ -315,6 +318,17 @@ export default function AIAssistant() {
               if (text) assistantResponse += text;
             } catch { /* ignore parse errors */ }
           }
+        }
+      }
+      pending += decoder.decode();
+      if (pending.startsWith('data: ')) {
+        const dataStr = pending.slice(6);
+        if (dataStr !== '[DONE]') {
+          try {
+            const parsed = JSON.parse(dataStr);
+            const text = parsed.candidates?.[0]?.content?.parts?.[0]?.text;
+            if (text) assistantResponse += text;
+          } catch { /* ignore incomplete final event */ }
         }
       }
 

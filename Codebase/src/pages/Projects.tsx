@@ -102,23 +102,23 @@ export default function Projects() {
 
         // Add new team members if specified in edit mode
         if (memberEmails.trim()) {
-          const emails = memberEmails.split(',').map(e => e.trim().toLowerCase()).filter(e => e);
-          console.log('Adding members by email (edit mode):', emails);
+          const usernames = memberEmails.split(',').map(e => e.trim().toLowerCase()).filter(e => e);
+          console.log('Adding members by AcadFlow username (edit mode):', usernames);
           
           const successfulAdds: string[] = [];
           const failedAdds: string[] = [];
           
-          for (const email of emails) {
+          for (const username of usernames) {
             try {
-              // Use SECURITY DEFINER RPC to look up user by email (bypasses restrictive RLS on profiles)
+              if (!/^[a-zA-Z0-9_]+$/.test(username)) { failedAdds.push(username); continue; }
               const { data: profileRows, error: profileError } = await supabase
-                .rpc('find_user_by_email', { lookup_email: email });
+                .rpc('find_user_by_email', { p_email: username });
 
               const profile = Array.isArray(profileRows) && profileRows.length > 0 ? profileRows[0] : null;
 
               if (profileError) {
                 console.error('Error fetching profile:', profileError);
-                failedAdds.push(email);
+                failedAdds.push(username);
                 continue;
               }
 
@@ -132,29 +132,29 @@ export default function Projects() {
                   .maybeSingle();
 
                 if (existingMember) {
-                  toast.info(`${email} is already a member of this project`);
+                  toast.info(`${username} is already a member of this project`);
                   continue;
                 }
 
                 const { error: memberError } = await supabase.from('project_members').insert({
                   project_id: editingProject.id,
                   user_id: profile.id,
-                  email: profile.email || email,
+                  email: profile.email || `${profile.username}@acadflow.app`,
                 });
 
                 if (memberError) {
                   console.error('Error adding member:', memberError);
-                  failedAdds.push(email);
+                  failedAdds.push(username);
                 } else {
-                  successfulAdds.push(email);
+                  successfulAdds.push(username);
                 }
               } else {
-                failedAdds.push(email);
-                toast.error(`No account found for "${email}". They must sign up first.`);
+                failedAdds.push(username);
+                toast.error(`No AcadFlow account found for username "${username}". They must sign up first.`);
               }
             } catch (memberError: any) {
-              console.error('Failed to add member:', email, memberError);
-              failedAdds.push(email);
+              console.error('Failed to add member:', username, memberError);
+              failedAdds.push(username);
             }
           }
 
@@ -169,7 +169,7 @@ export default function Projects() {
             toast.success(`Successfully added ${successfulAdds.length} member(s) - +${successfulAdds.length * 15} pts`);
           }
           if (failedAdds.length > 0) {
-            toast.warning(`Failed to add ${failedAdds.length} member(s). Please check the email addresses.`);
+            toast.warning(`Failed to add ${failedAdds.length} member(s). Please check the AcadFlow usernames.`);
           }
         }
 
@@ -190,23 +190,23 @@ export default function Projects() {
         // Add team members if specified
         // Note: RLS policies use SECURITY DEFINER helper functions to prevent infinite recursion
         if (memberEmails.trim()) {
-          const emails = memberEmails.split(',').map(e => e.trim().toLowerCase()).filter(e => e);
-          console.log('Adding members by email:', emails);
+          const usernames = memberEmails.split(',').map(e => e.trim().toLowerCase()).filter(e => e);
+          console.log('Adding members by AcadFlow username:', usernames);
           
           const successfulAdds: string[] = [];
           const failedAdds: string[] = [];
           
-          for (const email of emails) {
+          for (const username of usernames) {
             try {
-              // Use SECURITY DEFINER RPC to look up user by email (bypasses restrictive RLS on profiles)
+              if (!/^[a-zA-Z0-9_]+$/.test(username)) { failedAdds.push(username); continue; }
               const { data: profileRows, error: profileError } = await supabase
-                .rpc('find_user_by_email', { lookup_email: email });
+                .rpc('find_user_by_email', { p_email: username });
 
               const profile = Array.isArray(profileRows) && profileRows.length > 0 ? profileRows[0] : null;
 
               if (profileError) {
                 console.error('Error fetching profile:', profileError);
-                failedAdds.push(email);
+                failedAdds.push(username);
                 continue;
               }
 
@@ -220,29 +220,29 @@ export default function Projects() {
                   .maybeSingle();
 
                 if (existingMember) {
-                  toast.info(`${email} is already a member of this project`);
+                  toast.info(`${username} is already a member of this project`);
                   continue;
                 }
 
                 const { error: memberError } = await supabase.from('project_members').insert({
                   project_id: data.id,
                   user_id: profile.id,
-                  email: profile.email || email,
+                  email: profile.email || `${profile.username}@acadflow.app`,
                 });
 
                 if (memberError) {
                   console.error('Error adding member:', memberError);
-                  failedAdds.push(email);
+                  failedAdds.push(username);
                 } else {
-                  successfulAdds.push(email);
+                  successfulAdds.push(username);
                 }
               } else {
-                failedAdds.push(email);
-                toast.error(`No account found for "${email}". They must sign up first.`);
+                failedAdds.push(username);
+                toast.error(`No AcadFlow account found for username "${username}". They must sign up first.`);
               }
             } catch (memberError: any) {
-              console.error('Failed to add member:', email, memberError);
-              failedAdds.push(email);
+              console.error('Failed to add member:', username, memberError);
+              failedAdds.push(username);
             }
           }
 
@@ -466,16 +466,16 @@ export default function Projects() {
                   </div>
 
                   <div className="space-y-2">
-                    <Label htmlFor="members">Invite Team Members (comma-separated usernames or emails)</Label>
+                    <Label htmlFor="members">Invite Team Members (comma-separated AcadFlow usernames)</Label>
                     <Textarea
                       id="members"
                       value={memberEmails}
                       onChange={(e) => setMemberEmails(e.target.value)}
-                      placeholder="alex, jordan@gmail.com, sam@company.com"
+                      placeholder="alex, jordan, sam_123"
                       rows={2}
                     />
                     <p className="text-xs text-muted-foreground">
-                      Enter usernames or email addresses of existing users. E.g. <strong>alex</strong> or <strong>alex@gmail.com</strong> both work.
+                      Enter usernames of existing AcadFlow users. Gmail and other email addresses are not accepted.
                     </p>
                   </div>
 

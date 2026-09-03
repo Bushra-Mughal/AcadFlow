@@ -1,11 +1,19 @@
-import { corsHeaders } from '../_shared/cors.ts';
+import 'jsr:@supabase/functions-js/edge-runtime.d.ts';
+import { withSupabase } from 'jsr:@supabase/server@^1';
+
+const corsHeaders = {
+  'Access-Control-Allow-Origin': '*',
+  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+  'Access-Control-Allow-Methods': 'POST, OPTIONS',
+};
 
 const MAX_HISTORY_MESSAGES = 20;
 
-Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') {
-    return new Response(null, { headers: corsHeaders });
-  }
+export default {
+  fetch: withSupabase({ auth: 'user' }, async (req: Request) => {
+    if (req.method === 'OPTIONS') {
+      return new Response(null, { headers: corsHeaders });
+    }
 
   try {
     const {
@@ -24,10 +32,18 @@ Deno.serve(async (req) => {
       );
     }
 
-    const apiKey = Deno.env.get('INTEGRATIONS_API_KEY');
+    const apiKey = Deno.env.get('INTEGRATIONS_API_KEY') || Deno.env.get('GOOGLE_API_KEY') || Deno.env.get('GEMINI_API_KEY');
     if (!apiKey) {
       return new Response(
-        JSON.stringify({ error: 'API key not configured' }),
+        JSON.stringify({
+          error: 'AI backend is not configured. Set INTEGRATIONS_API_KEY (or GEMINI_API_KEY) in your Supabase Edge Function secrets.',
+        }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+    if (apiKey.startsWith('sb_publishable_') || apiKey.startsWith('sb_secret_')) {
+      return new Response(
+        JSON.stringify({ error: 'Invalid AI gateway secret. Do not use a Supabase publishable or secret key as the AI API key.' }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -103,13 +119,13 @@ RESPONSE FORMATTING RULES â€” follow strictly:
     contents.push({ role: 'user', parts: [{ text: message }] });
 
     // â”€â”€ Call Gemini â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    const apiUrl = 'https://app-biof3pfof94x-api-VaOwP8E7dJqa.gateway.appmedo.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse';
+    const apiUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse';
 
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'X-Gateway-Authorization': `Bearer ${apiKey}`,
+        'x-goog-api-key': apiKey,
       },
       body: JSON.stringify({
         contents,
@@ -131,41 +147,22 @@ RESPONSE FORMATTING RULES â€” follow strictly:
     }
 
     // â”€â”€ Stream response back â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    const stream = new ReadableStream({
-      async start(controller) {
-        const reader = response.body?.getReader();
-        const decoder = new TextDecoder();
-        if (reader) {
-          try {
-            while (true) {
-              const { done, value } = await reader.read();
-              if (done) break;
-              controller.enqueue(new TextEncoder().encode(decoder.decode(value)));
-            }
-          } catch (err) {
-            console.error('[ai-assistant] Stream error:', err);
-          } finally {
-            controller.close();
-          }
-        }
-      },
-    });
-
-    return new Response(stream, {
+    return new Response(response.body, {
       headers: {
         ...corsHeaders,
-        'Content-Type': 'text/event-stream',
+        'Content-Type': response.headers.get('content-type') || 'text/event-stream',
         'Cache-Control': 'no-cache',
         'Connection': 'keep-alive',
       },
     });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('[ai-assistant] Unhandled error:', error);
     return new Response(
-      JSON.stringify({ error: error?.message || 'Internal server error' }),
+      JSON.stringify({ error: error instanceof Error ? error.message : 'Internal server error' }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
-});
+  }),
+};
 
 

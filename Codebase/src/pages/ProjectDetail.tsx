@@ -112,34 +112,23 @@ export default function ProjectDetail() {
     const input = inviteEmail.trim().toLowerCase();
     if (!input) return;
 
-    // Accept either a plain username (letters/digits/_) or any email-like string
-    const isEmail = input.includes('@');
     const usernameRegex = /^[a-zA-Z0-9_]+$/;
-    if (isEmail) {
-      // Basic sanity check: must have something before and after @
-      const parts = input.split('@');
-      if (parts[0].length === 0 || parts[1].length === 0) {
-        toast.error('Please enter a valid email address or username.');
-        return;
-      }
-    } else if (!usernameRegex.test(input)) {
+    if (!usernameRegex.test(input)) {
       toast.error('Username can only contain letters, numbers, and underscores.');
       return;
     }
 
     setInviting(true);
     try {
-      // RPC matches by exact email OR by username extracted from the local part
       const { data: profileRows, error: profileError } = await supabase
-        .rpc('find_user_by_email', { lookup_email: input });
+        .rpc('find_user_by_email', { p_email: input });
 
       if (profileError) throw profileError;
 
       const profile = Array.isArray(profileRows) && profileRows.length > 0 ? profileRows[0] : null;
 
       if (!profile) {
-        const label = isEmail ? `"${input}"` : `username "${input}"`;
-        toast.error(`No account found for ${label}. They must sign up first.`);
+        toast.error(`No AcadFlow account found for username "${input}". They must sign up first.`);
         return;
       }
 
@@ -159,7 +148,7 @@ export default function ProjectDetail() {
       const { error: insertError } = await supabase.from('project_members').insert({
         project_id: id,
         user_id: profile.id,
-        email: profile.email || input,
+        email: profile.email || `${profile.username}@acadflow.app`,
       });
 
       if (insertError) throw insertError;
@@ -582,16 +571,16 @@ export default function ProjectDetail() {
                 <DialogHeader>
                   <DialogTitle>Invite a Team Member</DialogTitle>
                   <DialogDescription>
-                    Enter their username or email - e.g. <strong>alex</strong>, <strong>alex@gmail.com</strong>, or <strong>alex@company.com</strong>. They must already have an account.
+                    Enter the unique AcadFlow username of an existing account. They will be added immediately.
                   </DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4 pt-2">
                   <div className="space-y-1.5">
-                    <Label htmlFor="invite-email">Username or email</Label>
+                    <Label htmlFor="invite-email">AcadFlow username</Label>
                     <Input
                       id="invite-email"
                       type="text"
-                      placeholder="e.g. alex or alex@gmail.com"
+                      placeholder="e.g. alex"
                       value={inviteEmail}
                       onChange={(e) => setInviteEmail(e.target.value)}
                       onKeyDown={(e) => { if (e.key === 'Enter') handleInviteMember(); }}
@@ -621,7 +610,7 @@ export default function ProjectDetail() {
             <div className="flex flex-col items-center gap-2 py-8 text-center">
               <Users className="h-8 w-8 text-muted-foreground/40" />
               <p className="text-sm text-muted-foreground">No team members yet.</p>
-              <p className="text-xs text-muted-foreground">Use the Invite button to add collaborators by email.</p>
+              <p className="text-xs text-muted-foreground">Use the Invite button to add collaborators by AcadFlow username.</p>
             </div>
           ) : (
             <div className="space-y-2">

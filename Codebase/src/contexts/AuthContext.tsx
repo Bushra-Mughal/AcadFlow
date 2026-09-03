@@ -2,6 +2,8 @@ import React, { createContext, useContext, useEffect, useState } from 'react';
 import { isSupabaseConfigured, supabase } from '@/db/supabase';
 import type { User } from '@supabase/supabase-js';
 
+const AUTH_EMAIL_DOMAIN = 'acadflow.app';
+
 interface Profile {
   id: string;
   email: string | null;
@@ -78,9 +80,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function signIn(username: string, password: string) {
     if (!isSupabaseConfigured) throw new Error('Configure Supabase in .env.local before signing in.');
-    const email = `${username.trim().toLowerCase()}@acadflow.local`;
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw error;
+    const normalizedUsername = username.trim().toLowerCase();
+    const { error } = await supabase.auth.signInWithPassword({
+      email: `${normalizedUsername}@${AUTH_EMAIL_DOMAIN}`,
+      password,
+    });
+    if (!error) return;
+
+    // Keep users created by the old username alias scheme able to sign in.
+    const { error: legacyError } = await supabase.auth.signInWithPassword({
+      email: `${normalizedUsername}@miaoda.com`,
+      password,
+    });
+    if (legacyError) throw error;
   }
 
   async function signUp(username: string, password: string) {
@@ -104,7 +116,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (checkError) throw checkError;
     if (existing) throw new Error('Username is already taken. Please choose a different one.');
 
-    const email = `${normalizedUsername.toLowerCase()}@acadflow.local`;
+    const email = `${normalizedUsername.toLowerCase()}@${AUTH_EMAIL_DOMAIN}`;
     const { data, error } = await supabase.auth.signUp({ email, password });
     if (error) throw error;
 
@@ -125,7 +137,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   async function resetPassword(username: string) {
     if (!isSupabaseConfigured) throw new Error('Configure Supabase in .env.local before resetting a password.');
-    const email = `${username.trim().toLowerCase()}@acadflow.local`;
+    const email = `${username.trim().toLowerCase()}@${AUTH_EMAIL_DOMAIN}`;
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${window.location.origin}/reset-password`,
     });
