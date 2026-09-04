@@ -5,7 +5,6 @@ import Projects from './pages/Projects';
 import ProjectDetail from './pages/ProjectDetail';
 import Files from './pages/Files';
 import AIAssistant from './pages/AIAssistant';
-import ActivityLog from './pages/ActivityLog';
 import Achievements from './pages/Achievements';
 import ThemeCustomization from './pages/ThemeCustomization';
 import Login from './pages/Login';
@@ -53,8 +52,13 @@ export const routes: RouteConfig[] = [
     visible: false,
   },
   {
-    name: 'Dashboard',
+    name: 'AI Assistant',
     path: '/',
+    element: <AIAssistant />,
+  },
+  {
+    name: 'Dashboard',
+    path: '/dashboard',
     element: <Dashboard />,
   },
   {
@@ -85,11 +89,6 @@ export const routes: RouteConfig[] = [
     element: <Files />,
   },
   {
-    name: 'AI Assistant',
-    path: '/ai-assistant',
-    element: <AIAssistant />,
-  },
-  {
     name: 'Achievements',
     path: '/achievements',
     element: <Achievements />,
@@ -98,11 +97,6 @@ export const routes: RouteConfig[] = [
     name: 'Theme Customization',
     path: '/theme',
     element: <ThemeCustomization />,
-  },
-  {
-    name: 'Activity Log',
-    path: '/activity-log',
-    element: <ActivityLog />,
   },
 ];
 

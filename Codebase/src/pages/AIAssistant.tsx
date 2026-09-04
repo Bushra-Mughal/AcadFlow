@@ -1,4 +1,5 @@
-import React, { useEffect, useState, useRef, useCallback } from 'react';
+import React, { useEffect, useState, useRef, useCallback, useMemo } from 'react';
+import { useLocation } from 'react-router-dom';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
@@ -9,10 +10,13 @@ import {
 } from '@/components/ui/alert-dialog';
 import { supabase } from '@/db/supabase';
 import type { ChatMessage, FileRecord } from '@/types';
-import { Bot, Send, User, Trash2, MessageSquare, ClipboardList, FolderKanban } from 'lucide-react';
+import { Bot, Send, User, Trash2, MessageSquare, ClipboardList, FolderKanban, Sparkles, X, FileText, Paperclip, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { extractError } from '@/lib/activity';
 import AIAnalyzer from './AIAnalyzer';
+import CopilotPanel from '@/components/copilot/CopilotPanel';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { runCopilotExtract, publicUrlFor, isReadableFile } from '@/lib/copilot';
 
 // â”€â”€ Markdown renderer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function renderMarkdown(text: string): React.ReactNode[] {
@@ -106,6 +110,7 @@ const SESSION_KEY = 'acadflow_chat_session';
 
 // Shape sent to edge function (lean - no internal IDs needed)
 interface AssignmentContext {
+  id?: string;
   title: string;
   course?: string;
   due_date?: string;
@@ -115,6 +120,7 @@ interface AssignmentContext {
 }
 
 interface ProjectContext {
+  id?: string;
   title: string;
   course?: string;
   due_date?: string;
@@ -125,11 +131,53 @@ interface ProjectContext {
   member_count?: number;
 }
 
-export default function AIAssistant() {
+interface AttachedFile {
+  id: string;
+  name: string;
+  source: 'vault' | 'assignment' | 'project';
+  status: 'reading' | 'ready' | 'error';
+  text?: string;
+  note?: string;
+}
+
+// One labelled group of files inside the attachment picker.
+function FileGroup({ label, files, attachedIds, onPick }: {
+  label: string;
+  files: FileRecord[];
+  attachedIds: AttachedFile[];
+  onPick: (f: FileRecord) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
+      {files.map((f) => {
+        const attached = attachedIds.some((a) => a.id === f.id);
+        return (
+          <button
+            key={f.id}
+            type="button"
+            disabled={attached}
+            onClick={() => onPick(f)}
+            className="flex w-full items-center gap-2 rounded-lg border border-border/60 px-3 py-2 text-left text-sm hover:bg-muted transition-colors disabled:opacity-50"
+          >
+            <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+            <span className="truncate flex-1">{f.name}</span>
+            {attached && <span className="text-[11px] text-muted-foreground shrink-0">attached</span>}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export default function AIAssistant({ dock = false, onClose }: { dock?: boolean; onClose?: () => void } = {}) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [mode, setMode] = useState<'chat' | 'analyzer'>('chat');
+  const [planMode, setPlanMode] = useState(false);
+  const [attachPickerOpen, setAttachPickerOpen] = useState(false);
+  const [attachments, setAttachments] = useState<AttachedFile[]>([]);
   const [files, setFiles] = useState<FileRecord[]>([]);
   const [assignments, setAssignments] = useState<AssignmentContext[]>([]);
   const [projects, setProjects] = useState<ProjectContext[]>([]);
@@ -138,6 +186,29 @@ export default function AIAssistant() {
   });
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const location = useLocation();
+
+  // Page-awareness: tell the model which screen the student is on right now.
+  const pageContext = useMemo(() => {
+    const path = location.pathname;
+    if (path === '/dashboard') return { label: 'the Dashboard (overview of deadlines and stats)' };
+    if (path === '/assignments') return { label: 'the My Assignments list' };
+    if (path === '/projects') return { label: 'the Team Projects list' };
+    if (path === '/files') return { label: 'the My Files library' };
+    if (path === '/achievements') return { label: 'the Achievements page' };
+    if (path === '/theme') return { label: 'the Theme Customization page' };
+    const aMatch = path.match(/^\/assignments\/(.+)$/);
+    if (aMatch) {
+      const a = assignments.find((x) => x.id === aMatch[1]);
+      return { label: 'a specific assignment detail page', entityTitle: a?.title };
+    }
+    const pMatch = path.match(/^\/projects\/(.+)$/);
+    if (pMatch) {
+      const p = projects.find((x) => x.id === pMatch[1]);
+      return { label: 'a specific team project detail page', entityTitle: p?.title };
+    }
+    return { label: 'the AI Assistant home page' };
+  }, [location.pathname, assignments, projects]);
 
   useEffect(() => {
     localStorage.setItem(SESSION_KEY, sessionId);
@@ -182,11 +253,12 @@ export default function AIAssistant() {
     try {
       const { data } = await supabase
         .from('assignments')
-        .select('title, course, due_date, status, priority, description')
+        .select('id, title, course, due_date, status, priority, description')
         .order('due_date', { ascending: true })
         .limit(50);
       setAssignments(
         (data || []).map((a: any) => ({
+          id: a.id,
           title: a.title,
           course: a.course,
           due_date: a.due_date,
@@ -207,7 +279,7 @@ export default function AIAssistant() {
 
       const { data } = await supabase
         .from('projects')
-        .select('title, course, due_date, status, priority, description, creator_id')
+        .select('id, title, course, due_date, status, priority, description, creator_id')
         .order('due_date', { ascending: true })
         .limit(50);
 
@@ -221,6 +293,7 @@ export default function AIAssistant() {
             .select('id', { count: 'exact', head: true })
             .eq('project_id', p.id);
           return {
+            id: p.id,
             title: p.title,
             course: p.course,
             due_date: p.due_date,
@@ -243,6 +316,7 @@ export default function AIAssistant() {
     const userMessage = input.trim();
     setInput('');
     setLoading(true);
+    setPlanMode(false); // asking a question exits plan mode so the answer is visible
 
     try {
       const { data: { user } } = await supabase.auth.getUser();
@@ -288,6 +362,10 @@ export default function AIAssistant() {
           fileContext,
           assignmentContext: assignments,
           projectContext: projects,
+          pageContext,
+          attachments: attachments
+            .filter((a) => a.status === 'ready')
+            .map((a) => ({ name: a.name, text: a.text, note: a.note })),
           sessionId,
         }),
       });
@@ -376,11 +454,60 @@ export default function AIAssistant() {
     }
   }
 
+  const readableFiles = files.filter(isReadableFile);
+
+  // Group readable files by where they live so the paperclip picker is scannable.
+  const fileGroups = useMemo(() => {
+    const aTitle = new Map(assignments.map((a) => [a.id as string, a.title]));
+    const pTitle = new Map(projects.map((p) => [p.id as string, p.title]));
+    const vault: FileRecord[] = [];
+    const byAssignment = new Map<string, FileRecord[]>();
+    const byProject = new Map<string, FileRecord[]>();
+    for (const f of readableFiles) {
+      if (f.assignment_id) {
+        const key = aTitle.get(f.assignment_id) || 'Assignment';
+        byAssignment.set(key, [...(byAssignment.get(key) || []), f]);
+      } else if (f.project_id) {
+        const key = pTitle.get(f.project_id) || 'Project';
+        byProject.set(key, [...(byProject.get(key) || []), f]);
+      } else {
+        vault.push(f);
+      }
+    }
+    return { vault, byAssignment, byProject };
+  }, [readableFiles, assignments, projects]);
+
+  async function handleAttach(file: FileRecord) {
+    setAttachPickerOpen(false);
+    if (attachments.some((a) => a.id === file.id)) return;
+    const source: AttachedFile['source'] = file.assignment_id ? 'assignment' : file.project_id ? 'project' : 'vault';
+    setAttachments((prev) => [...prev, { id: file.id, name: file.name, source, status: 'reading' }]);
+    try {
+      const res = await runCopilotExtract({
+        file: { name: file.name, file_type: file.file_type, mime_type: file.mime_type, url: publicUrlFor(file) },
+      });
+      const ok = !!res.extracted && !!res.text;
+      setAttachments((prev) => prev.map((a) => a.id === file.id
+        ? { ...a, status: ok ? 'ready' : 'error', text: res.text, note: res.note || (ok ? undefined : 'contents not readable') }
+        : a));
+      if (!ok) toast.error(`Couldn't read ${file.name}${res.note ? `: ${res.note}` : ''}`);
+    } catch (err) {
+      const msg = extractError(err);
+      setAttachments((prev) => prev.map((a) => a.id === file.id ? { ...a, status: 'error', note: msg } : a));
+      toast.error('Attach failed: ' + msg);
+    }
+  }
+
+  function removeAttachment(id: string) {
+    setAttachments((prev) => prev.filter((a) => a.id !== id));
+  }
+
   const isEmpty = messages.length === 0;
 
   return (
-    <div className="flex flex-col h-[calc(100vh-5rem)]">
-      {/* Header */}
+    <div className={dock ? 'flex flex-col h-full min-h-0' : 'flex flex-col h-[calc(100vh-5rem)]'}>
+      {/* Header (full page only) */}
+      {!dock && (
       <div className="flex items-center justify-between px-6 py-4 border-b border-border/50">
         <div className="flex items-center gap-3">
           <div className="flex h-8 w-8 items-center justify-center rounded-full ai-gradient shrink-0">
@@ -445,9 +572,31 @@ export default function AIAssistant() {
           </AlertDialog>
         </div>
       </div>
+      )}
 
-      {mode === 'analyzer' ? <AIAnalyzer /> : <>
-      {/* Messages */}
+      {/* Compact header for the global dock */}
+      {dock && (
+        <div className="flex items-center justify-between px-4 py-3 border-b border-border/50 shrink-0">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full ai-gradient">
+              <Bot className="h-3.5 w-3.5 text-white" />
+            </div>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold leading-tight truncate">AI Assistant</p>
+              <p className="text-[11px] text-muted-foreground">Chat & plan mode · Ctrl+K to toggle</p>
+            </div>
+          </div>
+          {onClose && (
+            <Button variant="ghost" size="icon" onClick={onClose} className="h-8 w-8 shrink-0">
+              <X className="h-4 w-4" />
+            </Button>
+          )}
+        </div>
+      )}
+
+      {!dock && mode === 'analyzer' ? <AIAnalyzer /> : <>
+      {/* Messages / Plan mode */}
+      {planMode ? <CopilotPanel /> : (
       <div className="flex-1 overflow-y-auto">
         {isEmpty ? (
           <div className="flex flex-col items-center justify-center h-full gap-6 px-6 text-center">
@@ -549,10 +698,27 @@ export default function AIAssistant() {
           </div>
         )}
       </div>
+      )}
 
       {/* Input */}
       <div className="border-t border-border/50 px-4 md:px-8 py-4">
         <div className="max-w-3xl mx-auto">
+          {attachments.length > 0 && (
+            <div className="flex flex-wrap gap-2 mb-2">
+              {attachments.map((a) => (
+                <span key={a.id} className="inline-flex items-center gap-1.5 text-xs rounded-full border border-border/60 bg-muted/50 px-3 py-1.5">
+                  {a.status === 'reading'
+                    ? <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                    : <FileText className="h-3.5 w-3.5 text-muted-foreground" />}
+                  <span className="max-w-[12rem] truncate">{a.name}</span>
+                  {a.status === 'error' && <span className="text-destructive">unreadable</span>}
+                  <button type="button" onClick={() => removeAttachment(a.id)} className="text-muted-foreground hover:text-foreground" aria-label={`Remove ${a.name}`}>
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
           <div className="flex items-end gap-2 rounded-2xl border border-border/60 bg-background px-4 py-3 focus-within:border-border transition-colors">
             <Textarea
               ref={textareaRef}
@@ -575,12 +741,70 @@ export default function AIAssistant() {
               <Send className="h-3.5 w-3.5" />
             </Button>
           </div>
+          <div className="flex items-center justify-between gap-2 mt-2">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPlanMode((v) => !v)}
+                aria-pressed={planMode}
+                className={`inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border transition-colors ${
+                  planMode
+                    ? 'border-primary bg-primary/10 text-foreground'
+                    : 'border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground'
+                }`}
+              >
+                <Sparkles className="h-3.5 w-3.5" />
+                Plan mode
+              </button>
+              <button
+                type="button"
+                onClick={() => setAttachPickerOpen(true)}
+                disabled={readableFiles.length === 0}
+                className="inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border border-border/60 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-50"
+              >
+                <Paperclip className="h-3.5 w-3.5" />
+                Attach a file
+              </button>
+            </div>
+            {planMode && (
+              <span className="text-xs text-muted-foreground">Showing your work plan above</span>
+            )}
+          </div>
           <p className="text-center text-xs text-muted-foreground/60 mt-2">
             AI can make mistakes - verify important information
           </p>
         </div>
       </div>
       </>}
+
+      {/* Attachment picker: any readable file, grouped by where it lives */}
+      <Dialog open={attachPickerOpen} onOpenChange={setAttachPickerOpen}>
+        <DialogContent className="max-w-[calc(100%-2rem)] md:max-w-md max-h-[70dvh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-balance">Attach a file</DialogTitle>
+            <DialogDescription className="text-pretty">
+              Pick a file to ground the chat in its real contents. Then ask "explain this", "summarise it", or "quiz me on it".
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            {readableFiles.length === 0 ? (
+              <p className="py-6 text-center text-sm text-muted-foreground">No readable files yet. Upload a PDF, DOCX, text, or code file.</p>
+            ) : (
+              <>
+                {fileGroups.vault.length > 0 && (
+                  <FileGroup label="My Files (vault)" files={fileGroups.vault} attachedIds={attachments} onPick={handleAttach} />
+                )}
+                {[...fileGroups.byAssignment.entries()].map(([title, fs]) => (
+                  <FileGroup key={`a-${title}`} label={`Assignment · ${title}`} files={fs} attachedIds={attachments} onPick={handleAttach} />
+                ))}
+                {[...fileGroups.byProject.entries()].map(([title, fs]) => (
+                  <FileGroup key={`p-${title}`} label={`Project · ${title}`} files={fs} attachedIds={attachments} onPick={handleAttach} />
+                ))}
+              </>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

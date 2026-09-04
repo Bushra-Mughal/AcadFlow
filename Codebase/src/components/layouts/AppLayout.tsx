@@ -6,7 +6,6 @@ import {
   Users, 
   FolderOpen, 
   Bot, 
-  Activity,
   Menu,
   Moon,
   Sun,
@@ -22,18 +21,18 @@ import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { toast } from 'sonner';
 import { loadTheme, applyTheme } from '@/lib/theme';
+import { AiDock } from '@/components/assistant/AiDock';
 
 interface AppLayoutProps {
   children: React.ReactNode;
 }
 
 const navigation = [
-  { name: 'Dashboard', href: '/', icon: LayoutDashboard },
+  { name: 'AI Assistant', href: '/', icon: Bot, isAI: true },
+  { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'My Assignments', href: '/assignments', icon: FileText },
   { name: 'Team Projects', href: '/projects', icon: Users },
   { name: 'My Files', href: '/files', icon: FolderOpen },
-  { name: 'AI Assistant', href: '/ai-assistant', icon: Bot, isAI: true },
-  { name: 'Activity Log', href: '/activity-log', icon: Activity },
   { name: 'Achievements', href: '/achievements', icon: Award },
   { name: 'Theme', href: '/theme', icon: Palette },
 ];
@@ -207,6 +206,9 @@ export function AppLayout({ children }: AppLayoutProps) {
           </div>
         </main>
       </div>
+
+      {/* Global AI launcher (floating button + Ctrl/Cmd+K dock) */}
+      <AiDock />
     </div>
   );
 }

@@ -22,6 +22,8 @@ export default {
       fileContext,
       assignmentContext,
       projectContext,
+      pageContext,
+      attachments,
       sessionId,
     } = await req.json();
 
@@ -61,7 +63,10 @@ RESPONSE FORMATTING RULES â€” follow strictly:
 7. No excessive punctuation: avoid "...", em-dashes, or mid-sentence colons unless listing.
 8. End responses concisely. Offer a follow-up only when genuinely relevant.
 9. Use plain language unless the student uses jargon.
-10. MEMORY: You have access to recent conversation history. Build on it.`;
+10. MEMORY: You have access to recent conversation history. Build on it.
+11. NEVER give generic advice ("manage your time", "start early", "review your notes"). Always reference the student's REAL assignment/project titles, courses, due dates, and statuses from the context above.
+12. When answering from an attached file, cite it by name and ground every claim in its actual contents. If a question needs a file's contents you do not have, ask the student to attach it with the paperclip button instead of guessing.
+13. If you cannot read a needed file or lack information, say so plainly. Never invent requirements, deadlines, or file contents.`;
 
     // Assignments context
     if (Array.isArray(assignmentContext) && assignmentContext.length > 0) {
@@ -87,6 +92,27 @@ RESPONSE FORMATTING RULES â€” follow strictly:
     // Uploaded files context
     if (Array.isArray(fileContext) && fileContext.length > 0) {
       systemPrompt += `\n\n## Uploaded Files\n${fileContext.map((f: any) => `- ${f.name} (${f.file_type})`).join('\n')}`;
+    }
+
+    // Attached files: the student explicitly attached these via the paperclip.
+    // Their real text was extracted client-side (copilot extractor) and is sent
+    // here, so the model can answer "explain this" grounded in actual contents.
+    if (Array.isArray(attachments) && attachments.length > 0) {
+      systemPrompt += `\n\n## Attached file(s)\nThe student attached the file(s) below and their real contents follow. When they say "this", "the file", "explain it", or ask anything about the attachment, ground your answer in this text.`;
+      for (const att of attachments) {
+        const name = att && att.name ? att.name : 'attachment';
+        if (att && att.text) {
+          systemPrompt += `\n\n### ${name}\n"""\n${String(att.text).slice(0, 12000)}\n"""`;
+        } else {
+          systemPrompt += `\n\n### ${name} - contents could not be read${att && att.note ? ` (${att.note})` : ''}. Say so plainly and ask for a readable format or more detail.`;
+        }
+      }
+    }
+
+    // Page-awareness: where the student is looking right now
+    if (pageContext && typeof pageContext === 'object' && (pageContext as any).label) {
+      const pc = pageContext as { label?: string; entityTitle?: string };
+      systemPrompt += `\n\n## Current page\nThe student is right now on: ${pc.label}${pc.entityTitle ? ` — "${pc.entityTitle}"` : ''}. When they say "this", "it", or "this page", they mean this. Ground page-specific answers in it.`;
     }
 
     if (sessionId) {

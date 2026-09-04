@@ -8,10 +8,24 @@ import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { supabase } from '@/db/supabase';
 import type { Project, FileRecord, ProjectMember } from '@/types';
-import { ArrowLeft, Upload, FileText, Image, File as FileIcon, Download, Trash2, Edit, Eye, Users, UserPlus, X, Loader2 } from 'lucide-react';
+import { ArrowLeft, Upload, FileText, Image, File as FileIcon, Download, Trash2, Edit, Eye, Users, UserPlus, X, Loader2, Sparkles, ListChecks, Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { StatusBadge, PriorityBadge } from '@/components/shared/Badges';
-import { formatRelativeTime, trackActivity, extractError } from '@/lib/activity';
+import { formatRelativeTime, extractError } from '@/lib/activity';
+import { runCopilotExplain, runCopilotDelegate, publicUrlFor, isReadableFile } from '@/lib/copilot';
+import type { CopilotExplanation, CopilotDelegateResult } from '@/lib/copilot';
+import { Checkbox } from '@/components/ui/checkbox';
+
+interface ProjectTask {
+  id: string;
+  project_id: string;
+  assignee_id: string;
+  title: string;
+  detail?: string;
+  done: boolean;
+  source: string;
+  created_at: string;
+}
 
 export default function ProjectDetail() {
   const { id } = useParams<{ id: string }>();
@@ -29,6 +43,19 @@ export default function ProjectDetail() {
   const [inviteDialogOpen, setInviteDialogOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviting, setInviting] = useState(false);
+  const [explainFile, setExplainFile] = useState<FileRecord | null>(null);
+  const [explanation, setExplanation] = useState<CopilotExplanation | null>(null);
+  const [explaining, setExplaining] = useState(false);
+  const [explainError, setExplainError] = useState('');
+  const [explainDialogOpen, setExplainDialogOpen] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [memberUsernames, setMemberUsernames] = useState<Record<string, string>>({});
+  const [tasks, setTasks] = useState<ProjectTask[]>([]);
+  const [delegating, setDelegating] = useState(false);
+  const [assigning, setAssigning] = useState(false);
+  const [delegatePreview, setDelegatePreview] = useState<CopilotDelegateResult | null>(null);
+  const [newTaskTitle, setNewTaskTitle] = useState('');
+  const [newTaskAssignee, setNewTaskAssignee] = useState('');
 
   useEffect(() => {
     if (id) {
@@ -36,9 +63,15 @@ export default function ProjectDetail() {
       loadFiles();
       loadMembers();
       loadUnlinkedFiles();
-      trackActivity('viewed', undefined, id);
+      loadTasks();
+      loadCurrentUser();
     }
   }, [id]);
+
+  useEffect(() => {
+    loadMemberUsernames();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [members, project?.creator_id]);
 
   async function loadProject() {
     try {
@@ -157,7 +190,6 @@ export default function ProjectDetail() {
       setInviteEmail('');
       setInviteDialogOpen(false);
       loadMembers();
-      await trackActivity('created', undefined, id, { invited_email: profile.email || input });
     } catch (err) {
       const msg = extractError(err);
       console.error('[ProjectDetail] Invite error:', msg, err);
@@ -203,24 +235,7 @@ export default function ProjectDetail() {
     }
   }
 
-  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error('File size must be less than 10MB');
-      return;
-    }
-
-    setUploading(true);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        toast.error('You must be logged in');
-        setUploading(false);
-        return;
-      }
-
+  async function uploadOne(file: File, userId: string) {
       // Detect MIME type from file extension if browser doesn't provide it
       let mimeType = file.type;
       if (!mimeType || mimeType === 'application/octet-stream') {
@@ -259,7 +274,7 @@ export default function ProjectDetail() {
       }
 
       // Store all files in my-files folder (same location as My Files page)
-      const fileName = `my-files/${user.id}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+      const fileName = `my-files/${userId}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
       
       const { error: uploadError } = await supabase.storage
         .from('user-files')
@@ -293,7 +308,7 @@ export default function ProjectDetail() {
 
       // Insert file record into database
       const { error: dbError } = await supabase.from('files').insert({
-        user_id: user.id,
+        user_id: userId,
         name: file.name,
         file_path: fileName,
         file_type: fileType,
@@ -308,13 +323,39 @@ export default function ProjectDetail() {
         throw new Error(dbError.message || 'Failed to insert file record');
       }
 
-      toast.success('File uploaded successfully');
-      await loadFiles();
-      await trackActivity('created', undefined, id, { file_name: file.name });
+  }
+
+  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const list = Array.from(e.target.files || []);
+    if (!list.length) return;
+    if (list.length > 5) {
+      toast.error('You can upload up to 5 files at a time');
+      e.target.value = '';
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { toast.error('You must be logged in'); return; }
+      let okCount = 0;
+      const failed: string[] = [];
+      for (const file of list) {
+        if (file.size > 10 * 1024 * 1024) { failed.push(`${file.name} (over 10 MB)`); continue; }
+        try {
+          await uploadOne(file, user.id);
+          okCount++;
+        } catch (err) {
+          console.error('[ProjectDetail] upload one:', extractError(err), err);
+          failed.push(file.name);
+        }
+      }
+      if (okCount > 0) { toast.success(`${okCount} file${okCount > 1 ? 's' : ''} uploaded`); await loadFiles(); }
+      if (failed.length) toast.error(`Couldn't upload: ${failed.join(', ')}`);
     } catch (error: any) {
       const uploadMsg = extractError(error);
       console.error('[ProjectDetail] Upload error:', uploadMsg, error);
-      toast.error('Failed to upload file: ' + uploadMsg);
+      toast.error('Failed to upload: ' + uploadMsg);
     } finally {
       setUploading(false);
       e.target.value = '';
@@ -322,8 +363,6 @@ export default function ProjectDetail() {
   }
 
   async function handleOpenFile(file: FileRecord) {
-    await trackActivity('opened', undefined, id, { file_name: file.name, file_id: file.id });
-
     // For text files, open in editor
     if (file.mime_type?.startsWith('text/') || file.mime_type === 'application/json') {
       try {
@@ -413,7 +452,6 @@ export default function ProjectDetail() {
         toast.success('File saved successfully');
       }
       
-      await trackActivity('edited', undefined, id, { file_name: editingFile.name, file_id: editingFile.id });
       setEditDialogOpen(false);
     } catch (error) {
       const msg = extractError(error);
@@ -448,13 +486,149 @@ export default function ProjectDetail() {
       await supabase.storage.from('user-files').remove([file.file_path]);
       await supabase.from('files').delete().eq('id', file.id);
       toast.success('File deleted');
-      await trackActivity('deleted', undefined, id, { file_name: file.name });
       loadFiles();
     } catch (error) {
       const msg = extractError(error);
       console.error('[ProjectDetail] Delete error:', msg, error);
       toast.error('Failed to delete file: ' + msg);
     }
+  }
+
+  async function handleExplain(file: FileRecord) {
+    setExplainFile(file);
+    setExplanation(null);
+    setExplainError('');
+    setExplainDialogOpen(true);
+    setExplaining(true);
+    try {
+      const result = await runCopilotExplain({
+        file: {
+          name: file.name,
+          file_type: file.file_type,
+          mime_type: file.mime_type,
+          url: publicUrlFor(file),
+          assignment_title: project?.title,
+        },
+        assignment: project
+          ? { title: project.title, course: project.course, due_date: project.due_date, description: project.description }
+          : undefined,
+      });
+      setExplanation(result);
+    } catch (err) {
+      const msg = extractError(err);
+      console.error('[ProjectDetail] Explain error:', msg, err);
+      setExplainError(msg);
+    } finally {
+      setExplaining(false);
+    }
+  }
+
+  async function loadCurrentUser() {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) setCurrentUserId(user.id);
+    } catch (err) {
+      console.error('[ProjectDetail] loadCurrentUser:', err);
+    }
+  }
+
+  async function loadMemberUsernames() {
+    const ids = Array.from(new Set([...members.map((m) => m.user_id), ...(project?.creator_id ? [project.creator_id] : [])]));
+    if (!ids.length) { setMemberUsernames({}); return; }
+    const map: Record<string, string> = {};
+    try {
+      const { data, error } = await supabase.rpc('get_usernames_by_ids', { p_ids: ids });
+      if (error) throw error;
+      (data || []).forEach((p: any) => { if (p.username) map[p.id] = p.username; });
+    } catch (err) {
+      console.error('[ProjectDetail] get_usernames_by_ids unavailable:', err);
+    }
+    // Fill gaps (or the whole map if the RPC/migration isn't deployed yet) from
+    // the stored member email local-part, which for username-only accounts is
+    // the AcadFlow username.
+    members.forEach((m) => {
+      if (!map[m.user_id]) map[m.user_id] = (m.email || '').split('@')[0] || 'teammate';
+    });
+    if (project?.creator_id && !map[project.creator_id]) map[project.creator_id] = 'lead';
+    setMemberUsernames(map);
+  }
+
+  async function loadTasks() {
+    try {
+      const { data } = await supabase.from('project_tasks').select('*').eq('project_id', id).order('created_at', { ascending: true });
+      setTasks(data || []);
+    } catch (err) {
+      console.error('[ProjectDetail] loadTasks:', err);
+    }
+  }
+
+  async function handleDelegate() {
+    if (!project) return;
+    setDelegating(true);
+    setDelegatePreview(null);
+    try {
+      const fileRefs = files.filter(isReadableFile).slice(0, 6).map((f) => ({ name: f.name, file_type: f.file_type, mime_type: f.mime_type, url: publicUrlFor(f) }));
+      const result = await runCopilotDelegate({
+        project: { title: project.title, course: project.course, due_date: project.due_date, description: project.description },
+        members: memberListForAI,
+        files: fileRefs,
+      });
+      setDelegatePreview(result);
+    } catch (err) {
+      toast.error('Divide work failed: ' + extractError(err));
+    } finally {
+      setDelegating(false);
+    }
+  }
+
+  async function handleAssignPreview() {
+    const assignments = delegatePreview?.assignments || [];
+    setAssigning(true);
+    try {
+      const rowsToInsert: { project_id: string; assignee_id: string; title: string; detail?: string; source: string }[] = [];
+      for (const a of assignments) {
+        const uid = usernameToId[a.username];
+        if (!uid) continue;
+        for (const t of a.tasks || []) {
+          if (!t.title) continue;
+          rowsToInsert.push({ project_id: id!, assignee_id: uid, title: t.title, detail: t.detail, source: 'ai-copilot' });
+        }
+      }
+      if (!rowsToInsert.length) { toast.error('No suggested tasks matched your current team.'); return; }
+      const { error } = await supabase.from('project_tasks').insert(rowsToInsert);
+      if (error) throw error;
+      toast.success(`Assigned ${rowsToInsert.length} tasks across the team.`);
+      setDelegatePreview(null);
+      await loadTasks();
+    } catch (err) {
+      toast.error('Failed to assign tasks: ' + extractError(err));
+    } finally {
+      setAssigning(false);
+    }
+  }
+
+  async function toggleTask(t: ProjectTask) {
+    const next = !t.done;
+    setTasks((prev) => prev.map((x) => (x.id === t.id ? { ...x, done: next } : x)));
+    const { error } = await supabase.from('project_tasks').update({ done: next }).eq('id', t.id);
+    if (error) { toast.error('Failed to update task'); loadTasks(); }
+  }
+
+  async function addTask() {
+    const title = newTaskTitle.trim();
+    if (!title) return;
+    const assignee = isLead ? (newTaskAssignee || rows[0]?.id) : currentUserId;
+    if (!assignee) { toast.error('Choose a teammate first.'); return; }
+    const { error } = await supabase.from('project_tasks').insert({ project_id: id, assignee_id: assignee, title, source: 'manual' });
+    if (error) { toast.error('Failed to add task: ' + extractError(error)); return; }
+    setNewTaskTitle('');
+    loadTasks();
+  }
+
+  async function deleteTask(t: ProjectTask) {
+    setTasks((prev) => prev.filter((x) => x.id !== t.id));
+    const { error } = await supabase.from('project_tasks').delete().eq('id', t.id);
+    if (error) { toast.error('Failed to delete task'); loadTasks(); }
   }
 
   function getFileIcon(type: string) {
@@ -488,6 +662,38 @@ export default function ProjectDetail() {
       </div>
     );
   }
+
+  const isLead = !!project && !!currentUserId && project.creator_id === currentUserId;
+  const rows: { id: string; username: string }[] = members.map((m) => ({ id: m.user_id, username: memberUsernames[m.user_id] || 'teammate' }));
+  if (project?.creator_id && !members.some((m) => m.user_id === project.creator_id)) {
+    rows.unshift({ id: project.creator_id, username: memberUsernames[project.creator_id] || 'lead' });
+  }
+  const usernameToId: Record<string, string> = {};
+  rows.forEach((r) => { usernameToId[r.username] = r.id; });
+  const memberListForAI = rows.map((r) => ({ username: r.username, is_lead: r.id === project?.creator_id }));
+
+  // "Team Members" card rows. The lead (project creator) is not stored in
+  // project_members, so surface them explicitly and always show them to everyone.
+  // A teammate does not see their own row (they already know they're a member);
+  // the lead sees the full roster.
+  const creatorId = project?.creator_id;
+  const teamRows: { key: string; userId: string; name: string; isLead: boolean; memberRowId?: string; joinedAt?: string; email?: string }[] = [];
+  if (creatorId) {
+    teamRows.push({ key: `lead-${creatorId}`, userId: creatorId, name: memberUsernames[creatorId] || 'lead', isLead: true });
+  }
+  members.forEach((m) => {
+    if (creatorId && m.user_id === creatorId) return; // lead already listed above
+    teamRows.push({
+      key: m.id,
+      userId: m.user_id,
+      name: memberUsernames[m.user_id] || (m.email || '').split('@')[0] || 'teammate',
+      isLead: false,
+      memberRowId: m.id,
+      joinedAt: m.joined_at,
+      email: m.email,
+    });
+  });
+  const visibleTeamRows = teamRows.filter((r) => isLead || r.userId !== currentUserId);
 
   const isTextFile = (file: FileRecord) => 
     file.mime_type?.startsWith('text/') || 
@@ -556,7 +762,7 @@ export default function ProjectDetail() {
             <div>
               <CardTitle className="flex items-center gap-2 text-balance">
                 <Users className="h-5 w-5" />
-                Team Members ({members.length})
+                Team Members ({visibleTeamRows.length})
               </CardTitle>
               <CardDescription className="text-pretty mt-1">People collaborating on this project</CardDescription>
             </div>
@@ -606,7 +812,7 @@ export default function ProjectDetail() {
           </div>
         </CardHeader>
         <CardContent>
-          {members.length === 0 ? (
+          {visibleTeamRows.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-8 text-center">
               <Users className="h-8 w-8 text-muted-foreground/40" />
               <p className="text-sm text-muted-foreground">No team members yet.</p>
@@ -614,27 +820,169 @@ export default function ProjectDetail() {
             </div>
           ) : (
             <div className="space-y-2">
-              {members.map((member) => (
-                <div key={member.id} className="flex items-center justify-between rounded-lg border p-3 gap-3">
+              {visibleTeamRows.map((r) => (
+                <div key={r.key} className="flex items-center justify-between rounded-lg border p-3 gap-3">
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium text-sm truncate">{member.email}</p>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <p className="font-medium text-sm truncate">{r.name}</p>
+                      {r.isLead && (
+                        <span className="shrink-0 rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary">Lead</span>
+                      )}
+                    </div>
                     <p className="text-xs text-muted-foreground">
-                      Joined {formatRelativeTime(member.joined_at)}
+                      {r.isLead ? 'Project creator' : r.joinedAt ? `Joined ${formatRelativeTime(r.joinedAt)}` : ''}
                     </p>
                   </div>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
-                    onClick={() => handleRemoveMember(member.id, member.email)}
-                    title="Remove member"
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
+                  {!r.isLead && isLead && r.memberRowId && (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="h-8 w-8 shrink-0 text-muted-foreground hover:text-destructive"
+                      onClick={() => handleRemoveMember(r.memberRowId as string, r.email || r.name)}
+                      title="Remove member"
+                    >
+                      <X className="h-4 w-4" />
+                    </Button>
+                  )}
                 </div>
               ))}
+              {members.length === 0 && (
+                <p className="pt-2 text-center text-xs text-muted-foreground">
+                  Use the Invite button to add collaborators by AcadFlow username.
+                </p>
+              )}
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2 text-balance">
+                <ListChecks className="h-5 w-5" />
+                Team Tasks
+              </CardTitle>
+              <CardDescription className="text-pretty mt-1">
+                {isLead
+                  ? "You are the lead - you see everyone's tasks. Teammates see only their own."
+                  : 'Your personal tasks for this project.'}
+              </CardDescription>
+            </div>
+            {isLead && (
+              <Button size="sm" variant="outline" className="shrink-0" onClick={handleDelegate} disabled={delegating || rows.length === 0}>
+                {delegating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+                {delegating ? 'Dividing work...' : 'Divide work with AI'}
+              </Button>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          {delegatePreview && (
+            <div className="space-y-3 rounded-lg border border-primary/40 bg-primary/5 p-4">
+              <p className="text-sm font-medium text-balance">Suggested division of work</p>
+              {delegatePreview.summary && <p className="text-xs text-muted-foreground text-pretty">{delegatePreview.summary}</p>}
+              <div className="space-y-3">
+                {(delegatePreview.assignments || []).map((a) => (
+                  <div key={a.username} className="space-y-1">
+                    <p className="text-sm font-medium">
+                      {a.username}
+                      {!usernameToId[a.username] && <span className="text-xs text-muted-foreground"> (not in team)</span>}
+                      {a.focus ? <span className="text-xs font-normal text-muted-foreground"> — {a.focus}</span> : null}
+                    </p>
+                    <ul className="space-y-0.5">
+                      {(a.tasks || []).map((t, i) => (
+                        <li key={i} className="flex gap-2 text-xs text-muted-foreground"><span className="shrink-0">-</span><span>{t.title}{t.detail ? ` (${t.detail})` : ''}</span></li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button size="sm" variant="outline" onClick={() => setDelegatePreview(null)}>Discard</Button>
+                <Button size="sm" onClick={handleAssignPreview} disabled={assigning}>
+                  {assigning && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                  Assign to team
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {rows.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">No teammates yet - invite members to divide work.</p>
+          ) : isLead ? (
+            <div className="space-y-4">
+              {rows.map((r) => {
+                const mine = tasks.filter((t) => t.assignee_id === r.id);
+                const done = mine.filter((t) => t.done).length;
+                return (
+                  <div key={r.id} className="space-y-2">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm font-medium">{r.username}{r.id === project?.creator_id ? ' (lead)' : ''}</p>
+                      <span className="text-xs text-muted-foreground">{done}/{mine.length} done</span>
+                    </div>
+                    {mine.length === 0 ? (
+                      <p className="text-xs text-muted-foreground">No tasks yet.</p>
+                    ) : (
+                      <div className="space-y-1">
+                        {mine.map((t) => (
+                          <div key={t.id} className="flex items-center gap-2 rounded-md border border-border/60 px-2 py-1.5">
+                            <Checkbox checked={t.done} onCheckedChange={() => toggleTask(t)} aria-label={`Toggle ${t.title}`} />
+                            <span className={`flex-1 text-sm ${t.done ? 'line-through text-muted-foreground' : ''}`}>{t.title}</span>
+                            <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive" onClick={() => deleteTask(t)} title="Delete task">
+                              <X className="h-3.5 w-3.5" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="space-y-1">
+              {tasks.length === 0 ? (
+                <p className="py-4 text-center text-sm text-muted-foreground">No tasks assigned to you yet.</p>
+              ) : (
+                tasks.map((t) => (
+                  <div key={t.id} className="flex items-center gap-2 rounded-md border border-border/60 px-2 py-1.5">
+                    <Checkbox checked={t.done} onCheckedChange={() => toggleTask(t)} aria-label={`Toggle ${t.title}`} />
+                    <span className={`flex-1 text-sm ${t.done ? 'line-through text-muted-foreground' : ''}`}>{t.title}</span>
+                    <Button size="icon" variant="ghost" className="h-7 w-7 shrink-0 text-muted-foreground hover:text-destructive" onClick={() => deleteTask(t)} title="Delete task">
+                      <X className="h-3.5 w-3.5" />
+                    </Button>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
+
+          <div className="flex items-center gap-2">
+            <Input
+              value={newTaskTitle}
+              onChange={(e) => setNewTaskTitle(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') addTask(); }}
+              placeholder={isLead ? 'Add a task for a teammate...' : 'Add a task for yourself...'}
+            />
+            {isLead && (
+              <select
+                value={newTaskAssignee || rows[0]?.id || ''}
+                onChange={(e) => setNewTaskAssignee(e.target.value)}
+                className="h-9 shrink-0 rounded-md border border-input bg-background px-2 text-sm"
+                aria-label="Assign to"
+              >
+                {rows.map((r) => (
+                  <option key={r.id} value={r.id}>{r.username}</option>
+                ))}
+              </select>
+            )}
+            <Button size="sm" variant="outline" className="shrink-0" onClick={addTask} disabled={!newTaskTitle.trim()}>
+              <Plus className="mr-1 h-4 w-4" />
+              Add
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
@@ -703,6 +1051,7 @@ export default function ProjectDetail() {
                 className="hidden"
                 onChange={handleUpload}
                 disabled={uploading}
+                multiple
               />
               <Button asChild disabled={uploading}>
                 <label htmlFor="file-upload" className="cursor-pointer">
@@ -737,6 +1086,11 @@ export default function ProjectDetail() {
                       </div>
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
+                      {isReadableFile(file) && (
+                        <Button size="icon" variant="ghost" onClick={() => handleExplain(file)} title="Explain with AI">
+                          <Sparkles className="h-4 w-4" />
+                        </Button>
+                      )}
                       {canEdit && (
                         <Button size="icon" variant="ghost" onClick={() => handleOpenFile(file)} title="Open & Edit">
                           <Edit className="h-4 w-4" />
@@ -786,6 +1140,64 @@ export default function ProjectDetail() {
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={explainDialogOpen} onOpenChange={setExplainDialogOpen}>
+        <DialogContent className="max-w-[calc(100%-2rem)] md:max-w-2xl max-h-[90dvh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-balance">Explain: {explainFile?.name}</DialogTitle>
+            <DialogDescription className="text-pretty">
+              What this file requires of you, the key points, and what's easy to miss.
+            </DialogDescription>
+          </DialogHeader>
+          {explaining ? (
+            <div className="flex items-center justify-center gap-2 py-8 text-muted-foreground">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              Reading the file and preparing an explanation...
+            </div>
+          ) : explainError ? (
+            <p className="py-4 text-sm text-destructive">{explainError}</p>
+          ) : explanation ? (
+            <div className="space-y-4">
+              {explanation.whatIsRequired && (
+                <div>
+                  <Label className="text-sm font-medium">What is required</Label>
+                  <p className="mt-1 text-sm text-muted-foreground text-pretty">{explanation.whatIsRequired}</p>
+                </div>
+              )}
+              {explanation.keyPoints && explanation.keyPoints.length > 0 && (
+                <div>
+                  <Label className="text-sm font-medium">Key points</Label>
+                  <ul className="mt-1 space-y-1">
+                    {explanation.keyPoints.map((k, i) => (
+                      <li key={i} className="flex gap-2 text-sm text-muted-foreground"><span className="shrink-0">-</span><span>{k}</span></li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {explanation.easyToMiss && explanation.easyToMiss.length > 0 && (
+                <div>
+                  <Label className="text-sm font-medium">Easy to miss</Label>
+                  <ul className="mt-1 space-y-1">
+                    {explanation.easyToMiss.map((k, i) => (
+                      <li key={i} className="flex gap-2 text-sm text-amber-600 dark:text-amber-400"><span className="shrink-0">!</span><span>{k}</span></li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {explanation.actionItems && explanation.actionItems.length > 0 && (
+                <div>
+                  <Label className="text-sm font-medium">Next actions</Label>
+                  <ol className="mt-1 list-decimal list-inside space-y-1">
+                    {explanation.actionItems.map((k, i) => (
+                      <li key={i} className="text-sm text-muted-foreground">{k}</li>
+                    ))}
+                  </ol>
+                </div>
+              )}
+            </div>
+          ) : null}
         </DialogContent>
       </Dialog>
     </div>

@@ -12,7 +12,7 @@ import { ProjectCard } from '@/components/shared/ProjectCard';
 import { Plus } from 'lucide-react';
 import { VoiceAdd } from '@/components/common/VoiceAdd';
 import { toast } from 'sonner';
-import { trackActivity, extractError } from '@/lib/activity';
+import { extractError } from '@/lib/activity';
 
 export default function Projects() {
   const [projects, setProjects] = useState<Project[]>([]);
@@ -173,7 +173,6 @@ export default function Projects() {
           }
         }
 
-        await trackActivity('edited', undefined, editingProject.id);
         toast.success('Project updated successfully');
       } else {
         const { data, error } = await supabase
@@ -254,7 +253,6 @@ export default function Projects() {
           }
         }
 
-        await trackActivity('created', undefined, data.id);
         toast.success('Project created successfully');
       }
 
@@ -276,7 +274,6 @@ export default function Projects() {
         .eq('id', id);
 
       if (error) throw error;
-      await trackActivity('deleted', undefined, id);
       toast.success('Project deleted');
       loadProjects();
     } catch (error) {
@@ -360,7 +357,6 @@ export default function Projects() {
         toast.success('Status updated');
       }
       
-      await trackActivity('status_changed', undefined, id, { new_status: status });
       loadProjects();
     } catch (error) {
       const msg = extractError(error);

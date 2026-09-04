@@ -12,7 +12,8 @@ import { AssignmentCard } from '@/components/shared/AssignmentCard';
 import { Plus } from 'lucide-react';
 import { VoiceAdd } from '@/components/common/VoiceAdd';
 import { toast } from 'sonner';
-import { trackActivity, extractError } from '@/lib/activity';
+import { extractError } from '@/lib/activity';
+import { runCopilotParse } from '@/lib/copilot';
 
 export default function Assignments() {
   const [assignments, setAssignments] = useState<Assignment[]>([]);
@@ -20,6 +21,7 @@ export default function Assignments() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingAssignment, setEditingAssignment] = useState<Assignment | null>(null);
   const [filterStatus, setFilterStatus] = useState<Status | 'all'>('all');
+  const [parsing, setParsing] = useState(false);
 
   const [formData, setFormData] = useState({
     title: '',
@@ -82,7 +84,6 @@ export default function Assignments() {
           .eq('id', editingAssignment.id);
 
         if (error) throw error;
-        await trackActivity('edited', editingAssignment.id);
         toast.success('Assignment updated successfully');
       } else {
         const { data, error } = await supabase
@@ -92,7 +93,6 @@ export default function Assignments() {
           .single();
 
         if (error) throw error;
-        await trackActivity('created', data.id);
         toast.success('Assignment created successfully');
       }
 
@@ -114,7 +114,6 @@ export default function Assignments() {
         .eq('id', id);
 
       if (error) throw error;
-      await trackActivity('deleted', id);
       toast.success('Assignment deleted');
       loadAssignments();
     } catch (error) {
@@ -198,7 +197,6 @@ export default function Assignments() {
         toast.success('Status updated');
       }
       
-      await trackActivity('status_changed', id, undefined, { new_status: status });
       loadAssignments();
     } catch (error) {
       const msg = extractError(error);
@@ -266,7 +264,35 @@ export default function Assignments() {
 
             <div className="space-y-4">
               <div className="flex justify-end">
-                <VoiceAdd onTranscript={(text) => setFormData((current) => ({ ...current, title: current.title || text, description: current.title ? `${current.description} ${text}`.trim() : current.description }))} label="Add by voice" />
+                <VoiceAdd
+                  label={parsing ? 'Parsing…' : 'Add by voice'}
+                  onFinal={async (text) => {
+                    setParsing(true);
+                    try {
+                      const parsed = await runCopilotParse({ transcript: text, kind: 'assignment' });
+                      setFormData((cur) => ({
+                        ...cur,
+                        title: (parsed.title || '').trim() || cur.title || text,
+                        course: (parsed.course || '').trim() || cur.course,
+                        due_date: parsed.due_date || cur.due_date,
+                        weightage: parsed.weightage != null ? String(parsed.weightage) : cur.weightage,
+                        priority: parsed.priority === 'low' || parsed.priority === 'high' ? parsed.priority : cur.priority,
+                        description: (parsed.description || '').trim() || cur.description,
+                      }));
+                      toast.success('Filled the form from your voice — review the fields');
+                    } catch (err) {
+                      console.error('[Assignments] voice parse failed, using plain dictation:', extractError(err), err);
+                      setFormData((cur) => ({
+                        ...cur,
+                        title: cur.title || text,
+                        description: cur.title ? `${cur.description} ${text}`.trim() : cur.description,
+                      }));
+                      toast.message('Added as plain text (AI parsing unavailable)');
+                    } finally {
+                      setParsing(false);
+                    }
+                  }}
+                />
               </div>
                 <form onSubmit={handleSubmit} className="space-y-4">
                   <div className="space-y-2">
@@ -361,7 +387,7 @@ export default function Assignments() {
                     <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
                       Cancel
                     </Button>
-                    <Button type="submit">
+                    <Button type="submit" disabled={parsing}>
                       {editingAssignment ? 'Update' : 'Create'} Assignment
                     </Button>
                   </div>

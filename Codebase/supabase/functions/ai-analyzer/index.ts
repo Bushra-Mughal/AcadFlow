@@ -74,6 +74,18 @@ Provide a comprehensive analysis in the following JSON format:
     "reasoning": "explanation of the assessment",
     "warnings": ["specific concerns if any"]
   },
+  "aiSimilarity": {
+    "score": 0-100,
+    "verdict": "Very Low/Low/Moderate/High/Very High",
+    "confidence": 0-100,
+    "reasoning": "why this text does or does not look machine-generated",
+    "signals": ["specific stylistic tells, e.g. uniform sentence length, low burstiness, generic phrasing, over-hedging, formulaic transitions"],
+    "segments": [
+      { "text": "short VERBATIM excerpt (max 25 words)", "likelihood": 0-100, "reason": "why this passage reads as AI-written" }
+    ],
+    "humanizationTips": ["concrete, specific rewrites that make the writing sound authentically human"],
+    "advisory": "one-line reminder that this is a heuristic estimate, not proof of misconduct"
+  },
   "overallScore": 0-100,
   "readyToSubmit": {
     "answer": "Yes/No",
@@ -88,6 +100,13 @@ Provide a comprehensive analysis in the following JSON format:
   ],
   "summary": "Brief encouraging summary of the analysis"
 }
+
+For "aiSimilarity", act as a STRICT AI-writing detector comparable to Turnitin's AI score.
+- "score" = your best estimate of the PERCENTAGE of the text that appears machine-generated (0 = clearly human, 100 = clearly AI). Map score to verdict: 0-15 Very Low, 16-35 Low, 36-60 Moderate, 61-80 High, 81-100 Very High.
+- Judge burstiness (variation in sentence length/structure), perplexity (unexpected, specific word choices), repetitive or over-smooth transitions, an over-neutral impersonal tone, hedging filler, and absence of concrete personal detail or genuine voice.
+- Quote the 3-6 MOST suspicious verbatim segments (copy exact words, max 25 words each) with a per-segment likelihood and a short reason.
+- Be rigorous but fair and non-accusatory: present everything as likelihood, never as proof. If the text is under ~80 words, set "confidence" low and say so in "reasoning".
+- "humanizationTips" must be actionable rewrites the student can apply immediately.
 
 Be constructive, specific, and encouraging. Focus on helping the student improve. Don't be harsh.`;
 

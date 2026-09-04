@@ -6,12 +6,29 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Badge } from '@/components/ui/badge';
 import { supabase } from '@/db/supabase';
-import type { Assignment, FileRecord } from '@/types';
-import { ArrowLeft, Upload, FileText, Image, File as FileIcon, Download, Trash2, Edit, Eye, Code } from 'lucide-react';
+import type { Assignment, FileRecord, Subtask } from '@/types';
+import { ArrowLeft, Upload, FileText, Image, File as FileIcon, Download, Trash2, Edit, Eye, Code, Sparkles, ListChecks, Plus, X } from 'lucide-react';
 import { toast } from 'sonner';
 import { StatusBadge, PriorityBadge } from '@/components/shared/Badges';
-import { formatRelativeTime, trackActivity, extractError } from '@/lib/activity';
+import { formatRelativeTime, extractError } from '@/lib/activity';
+import { runCopilotExplain, publicUrlFor, isReadableFile, tokenOverlapScore } from '@/lib/copilot';
+import type { CopilotExplanation } from '@/lib/copilot';
+
+// The subtasks column may arrive as JSONB (array), a JSON string, or null
+// depending on how it was created - always coerce to a safe array.
+function asSubtasks(value: unknown): Subtask[] {
+  if (Array.isArray(value)) return value as Subtask[];
+  if (typeof value === 'string' && value.trim()) {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) return parsed as Subtask[];
+    } catch { /* fall through */ }
+  }
+  return [];
+}
 
 export default function AssignmentDetail() {
   const { id } = useParams<{ id: string }>();
@@ -26,12 +43,21 @@ export default function AssignmentDetail() {
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [linkFilesDialogOpen, setLinkFilesDialogOpen] = useState(false);
 
+  // AI Copilot: per-file explanation
+  const [explainFile, setExplainFile] = useState<FileRecord | null>(null);
+  const [explanation, setExplanation] = useState<CopilotExplanation | null>(null);
+  const [explaining, setExplaining] = useState(false);
+  const [explainError, setExplainError] = useState('');
+  const [explainDialogOpen, setExplainDialogOpen] = useState(false);
+  // Sub-tasks checklist
+  const [newSubtask, setNewSubtask] = useState('');
+  const [savingSubtasks, setSavingSubtasks] = useState(false);
+
   useEffect(() => {
     if (id) {
       loadAssignment();
       loadFiles();
       loadUnlinkedFiles();
-      trackActivity('viewed', id);
     }
   }, [id]);
 
@@ -106,24 +132,7 @@ export default function AssignmentDetail() {
     }
   }
 
-  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (file.size > 10 * 1024 * 1024) {
-      toast.error('File size must be less than 10MB');
-      return;
-    }
-
-    setUploading(true);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        toast.error('You must be logged in');
-        setUploading(false);
-        return;
-      }
-
+  async function uploadOne(file: File, userId: string) {
       // Detect MIME type from file extension if browser doesn't provide it
       let mimeType = file.type;
       if (!mimeType || mimeType === 'application/octet-stream') {
@@ -162,7 +171,7 @@ export default function AssignmentDetail() {
       }
 
       // Store all files in my-files folder (same location as My Files page)
-      const fileName = `my-files/${user.id}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+      const fileName = `my-files/${userId}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
       
       const { error: uploadError } = await supabase.storage
         .from('user-files')
@@ -196,7 +205,7 @@ export default function AssignmentDetail() {
 
       // Insert file record into database
       const { error: dbError } = await supabase.from('files').insert({
-        user_id: user.id,
+        user_id: userId,
         name: file.name,
         file_path: fileName,
         file_type: fileType,
@@ -211,13 +220,39 @@ export default function AssignmentDetail() {
         throw new Error(dbError.message || 'Failed to insert file record');
       }
 
-      toast.success('File uploaded successfully');
-      await loadFiles();
-      await trackActivity('created', id, undefined, { file_name: file.name });
+  }
+
+  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const list = Array.from(e.target.files || []);
+    if (!list.length) return;
+    if (list.length > 5) {
+      toast.error('You can upload up to 5 files at a time');
+      e.target.value = '';
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { toast.error('You must be logged in'); return; }
+      let okCount = 0;
+      const failed: string[] = [];
+      for (const file of list) {
+        if (file.size > 10 * 1024 * 1024) { failed.push(`${file.name} (over 10 MB)`); continue; }
+        try {
+          await uploadOne(file, user.id);
+          okCount++;
+        } catch (err) {
+          console.error('[AssignmentDetail] upload one:', extractError(err), err);
+          failed.push(file.name);
+        }
+      }
+      if (okCount > 0) { toast.success(`${okCount} file${okCount > 1 ? 's' : ''} uploaded`); await loadFiles(); }
+      if (failed.length) toast.error(`Couldn't upload: ${failed.join(', ')}`);
     } catch (error: any) {
       const uploadMsg = extractError(error);
       console.error('[AssignmentDetail] Upload error:', uploadMsg, error);
-      toast.error('Failed to upload file: ' + uploadMsg);
+      toast.error('Failed to upload: ' + uploadMsg);
     } finally {
       setUploading(false);
       e.target.value = '';
@@ -225,8 +260,6 @@ export default function AssignmentDetail() {
   }
 
   async function handleOpenFile(file: FileRecord) {
-    await trackActivity('opened', id, undefined, { file_name: file.name, file_id: file.id });
-
     // For text files and code files, open in editor
     if (
       file.mime_type?.startsWith('text/') || 
@@ -320,7 +353,6 @@ export default function AssignmentDetail() {
         toast.success('File saved successfully');
       }
       
-      await trackActivity('edited', id, undefined, { file_name: editingFile.name, file_id: editingFile.id });
       setEditDialogOpen(false);
     } catch (error) {
       const msg = extractError(error);
@@ -355,13 +387,81 @@ export default function AssignmentDetail() {
       await supabase.storage.from('user-files').remove([file.file_path]);
       await supabase.from('files').delete().eq('id', file.id);
       toast.success('File deleted');
-      await trackActivity('deleted', id, undefined, { file_name: file.name });
       loadFiles();
     } catch (error) {
       const msg = extractError(error);
       console.error('[AssignmentDetail] Delete error:', msg, error);
       toast.error('Failed to delete file: ' + msg);
     }
+  }
+
+  async function handleExplain(file: FileRecord) {
+    setExplainFile(file);
+    setExplanation(null);
+    setExplainError('');
+    setExplainDialogOpen(true);
+    setExplaining(true);
+    try {
+      const result = await runCopilotExplain({
+        file: {
+          name: file.name,
+          file_type: file.file_type,
+          mime_type: file.mime_type,
+          url: publicUrlFor(file),
+          assignment_title: assignment?.title,
+        },
+        assignment: assignment
+          ? { title: assignment.title, course: assignment.course, description: assignment.description, due_date: assignment.due_date }
+          : undefined,
+      });
+      setExplanation(result);
+    } catch (error) {
+      const msg = extractError(error);
+      console.error('[AssignmentDetail] Explain error:', msg, error);
+      setExplainError(msg);
+      toast.error('Failed to explain file: ' + msg);
+    } finally {
+      setExplaining(false);
+    }
+  }
+
+  async function persistSubtasks(next: Subtask[]) {
+    if (!assignment) return;
+    setSavingSubtasks(true);
+    setAssignment({ ...assignment, subtasks: next });
+    const { error } = await supabase
+      .from('assignments')
+      .update({ subtasks: next })
+      .eq('id', assignment.id);
+    setSavingSubtasks(false);
+    if (error) {
+      const msg = extractError(error);
+      console.error('[AssignmentDetail] persistSubtasks:', msg, error);
+      toast.error('Failed to save sub-tasks: ' + msg);
+      loadAssignment();
+    }
+  }
+
+  async function toggleSubtask(subtaskId: string) {
+    const current = asSubtasks(assignment?.subtasks);
+    await persistSubtasks(current.map((s) => (s.id === subtaskId ? { ...s, done: !s.done } : s)));
+  }
+
+  async function removeSubtask(subtaskId: string) {
+    const current = asSubtasks(assignment?.subtasks);
+    await persistSubtasks(current.filter((s) => s.id !== subtaskId));
+  }
+
+  async function addSubtask() {
+    const text = newSubtask.trim();
+    if (!text) return;
+    const current = asSubtasks(assignment?.subtasks);
+    const next: Subtask[] = [
+      ...current,
+      { id: crypto.randomUUID(), text, done: false, source: 'manual', created_at: new Date().toISOString() },
+    ];
+    setNewSubtask('');
+    await persistSubtasks(next);
   }
 
   function getFileIcon(type: string) {
@@ -397,6 +497,16 @@ export default function AssignmentDetail() {
       </div>
     );
   }
+
+  const subtasks = asSubtasks(assignment.subtasks);
+  const doneCount = subtasks.filter((s) => s.done).length;
+
+  // Suggest vault files whose names share keywords with this assignment.
+  const suggestedFiles = unlinkedFiles
+    .map((f) => ({ file: f, rel: tokenOverlapScore(f.name, `${assignment.title} ${assignment.course || ''}`) }))
+    .filter((x) => x.rel.score > 0)
+    .sort((a, b) => b.rel.score - a.rel.score)
+    .slice(0, 4);
 
   const isTextFile = (file: FileRecord) => 
     file.mime_type?.startsWith('text/') || 
@@ -531,6 +641,7 @@ export default function AssignmentDetail() {
                 className="hidden"
                 onChange={handleUpload}
                 disabled={uploading}
+                multiple
               />
               <Button asChild disabled={uploading}>
                 <label htmlFor="file-upload" className="cursor-pointer">
@@ -542,6 +653,28 @@ export default function AssignmentDetail() {
           </div>
         </CardHeader>
         <CardContent>
+          {suggestedFiles.length > 0 && (
+            <div className="mb-4 space-y-2 rounded-lg border border-dashed border-border/70 bg-muted/30 p-3">
+              <p className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground">
+                <Sparkles className="h-3.5 w-3.5" />
+                Relevant files from your vault
+              </p>
+              {suggestedFiles.map(({ file, rel }) => (
+                <div key={file.id} className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <FileText className="h-4 w-4 shrink-0 text-muted-foreground" />
+                    <span className="text-sm truncate">{file.name}</span>
+                    <span className="shrink-0 text-[11px] text-muted-foreground">
+                      matches: {rel.matched.slice(0, 3).join(', ')}
+                    </span>
+                  </div>
+                  <Button size="sm" variant="outline" onClick={() => handleLinkFile(file.id)}>
+                    Link
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
           {files.length === 0 ? (
             <div className="text-center py-12 space-y-2">
               <p className="text-muted-foreground">No files uploaded yet</p>
@@ -575,6 +708,11 @@ export default function AssignmentDetail() {
                           <Eye className="h-4 w-4" />
                         </Button>
                       )}
+                      {isReadableFile(file) && (
+                        <Button size="icon" variant="ghost" onClick={() => handleExplain(file)} title="Explain with AI">
+                          <Sparkles className="h-4 w-4" />
+                        </Button>
+                      )}
                       <Button size="icon" variant="ghost" onClick={() => handleDownload(file)} title="Download">
                         <Download className="h-4 w-4" />
                       </Button>
@@ -587,6 +725,78 @@ export default function AssignmentDetail() {
               })}
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <CardTitle className="text-balance flex items-center gap-2">
+                <ListChecks className="h-4 w-4" /> Sub-tasks
+              </CardTitle>
+              <CardDescription className="text-pretty">
+                Break this assignment into steps. Use the AI Assistant Planner to auto-generate them.
+              </CardDescription>
+            </div>
+            {subtasks.length > 0 && (
+              <span className="text-xs text-muted-foreground tabular-nums shrink-0">
+                {doneCount}/{subtasks.length} done
+              </span>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {subtasks.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-pretty py-2">
+              No sub-tasks yet. Open AI Assistant &rarr; Planner to generate a plan, or add your own below.
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {subtasks.map((s) => (
+                <li key={s.id} className="flex items-start gap-3 rounded-lg border p-3 group">
+                  <Checkbox
+                    id={`subtask-${s.id}`}
+                    checked={s.done}
+                    onCheckedChange={() => toggleSubtask(s.id)}
+                    className="mt-0.5"
+                    disabled={savingSubtasks}
+                  />
+                  <label
+                    htmlFor={`subtask-${s.id}`}
+                    className={`flex-1 min-w-0 text-sm cursor-pointer text-pretty ${s.done ? 'line-through text-muted-foreground' : ''}`}
+                  >
+                    {s.text}
+                    {s.source === 'ai-copilot' && (
+                      <Badge variant="secondary" className="ml-2 text-[10px] px-1.5 py-0 align-middle">AI</Badge>
+                    )}
+                  </label>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-7 w-7 shrink-0 opacity-0 group-hover:opacity-100 focus:opacity-100 text-muted-foreground hover:text-destructive"
+                    onClick={() => removeSubtask(s.id)}
+                    title="Remove sub-task"
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <div className="flex items-center gap-2 pt-1">
+            <Input
+              value={newSubtask}
+              onChange={(e) => setNewSubtask(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addSubtask(); } }}
+              placeholder="Add a sub-task and press Enter"
+              className="text-sm"
+              disabled={savingSubtasks}
+            />
+            <Button onClick={addSubtask} disabled={savingSubtasks || !newSubtask.trim()} size="sm" className="gap-1.5 shrink-0">
+              <Plus className="h-4 w-4" /> Add
+            </Button>
+          </div>
         </CardContent>
       </Card>
 
@@ -614,6 +824,75 @@ export default function AssignmentDetail() {
               </Button>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={explainDialogOpen} onOpenChange={setExplainDialogOpen}>
+        <DialogContent className="max-w-[calc(100%-2rem)] md:max-w-2xl max-h-[90dvh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle className="text-balance flex items-center gap-2">
+              <Sparkles className="h-4 w-4" />
+              {explainFile?.name ? `Explain: ${explainFile.name}` : 'Explain file'}
+            </DialogTitle>
+            <DialogDescription className="text-pretty">
+              AI breakdown of what this file requires for the assignment.
+            </DialogDescription>
+          </DialogHeader>
+          {explaining && (
+            <div className="flex items-center justify-center gap-2 py-10 text-sm text-muted-foreground">
+              <span className="inline-block h-4 w-4 border-2 border-current border-t-transparent rounded-full animate-spin" />
+              Reading and analysing the file...
+            </div>
+          )}
+          {explainError && !explaining && (
+            <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive text-pretty">
+              {explainError}
+            </div>
+          )}
+          {explanation && !explaining && (
+            <div className="space-y-4">
+              {explanation.whatIsRequired && (
+                <div>
+                  <Label className="text-sm font-medium">What is required</Label>
+                  <p className="text-sm text-muted-foreground mt-1 text-pretty">{explanation.whatIsRequired}</p>
+                </div>
+              )}
+              {explanation.keyPoints && explanation.keyPoints.length > 0 && (
+                <div>
+                  <Label className="text-sm font-medium">Key points</Label>
+                  <ul className="mt-1 space-y-1">
+                    {explanation.keyPoints.map((k, i) => (
+                      <li key={i} className="flex gap-2 text-sm text-pretty">
+                        <span className="shrink-0 opacity-40">&bull;</span><span>{k}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {explanation.easyToMiss && explanation.easyToMiss.length > 0 && (
+                <div>
+                  <Label className="text-sm font-medium">Easy to miss</Label>
+                  <ul className="mt-1 space-y-1">
+                    {explanation.easyToMiss.map((k, i) => (
+                      <li key={i} className="flex gap-2 text-sm text-pretty">
+                        <span className="shrink-0 text-amber-600 dark:text-amber-400">&bull;</span><span>{k}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              {explanation.actionItems && explanation.actionItems.length > 0 && (
+                <div>
+                  <Label className="text-sm font-medium">Action items</Label>
+                  <ol className="mt-1 space-y-1 list-decimal list-inside">
+                    {explanation.actionItems.map((k, i) => (
+                      <li key={i} className="text-sm text-pretty">{k}</li>
+                    ))}
+                  </ol>
+                </div>
+              )}
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

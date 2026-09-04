@@ -302,7 +302,10 @@ export default function Files() {
   const loadAll = useCallback(async () => {
     try {
       const [{ data: filesData }, { data: foldersData }] = await Promise.all([
-        supabase.from('files').select('*').order('uploaded_at', { ascending: false }),
+        // Vault = personal library only: files not tied to an assignment or a
+        // team project. Uploading a file inside an assignment/project keeps it
+        // there instead of polluting the vault.
+        supabase.from('files').select('*').is('assignment_id', null).is('project_id', null).order('uploaded_at', { ascending: false }),
         supabase.from('file_folders').select('*').order('name'),
       ]);
       setFiles(filesData ?? []);
@@ -316,24 +319,16 @@ export default function Files() {
     }
   }, []);
 
-  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    if (file.size > 10 * 1024 * 1024) { toast.error('File size must be less than 10 MB'); return; }
-
-    setUploading(true);
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) { toast.error('You must be logged in'); return; }
+  async function uploadOne(file: File, userId: string) {
 
       const mimeType = detectMime(file);
-      const fileName = `my-files/${user.id}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+      const fileName = `my-files/${userId}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
 
       const { error: uploadError } = await supabase.storage.from('user-files').upload(fileName, file, { contentType: mimeType });
       if (uploadError) throw uploadError;
 
       const { error: dbError } = await supabase.from('files').insert({
-        user_id: user.id,
+        user_id: userId,
         name: file.name,
         file_path: fileName,
         file_type: categorise(mimeType),
@@ -343,8 +338,36 @@ export default function Files() {
       });
       if (dbError) throw new Error(dbError.message);
 
-      await supabase.rpc('award_points', { p_user_id: user.id, p_action: 'file_uploaded' });
-      toast.success('File uploaded! +5 pts');
+    await supabase.rpc('award_points', { p_user_id: userId, p_action: 'file_uploaded' });
+  }
+
+  async function handleUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const list = Array.from(e.target.files || []);
+    if (!list.length) return;
+    if (list.length > 5) {
+      toast.error('You can upload up to 5 files at a time');
+      e.target.value = '';
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) { toast.error('You must be logged in'); return; }
+      let okCount = 0;
+      const failed: string[] = [];
+      for (const file of list) {
+        if (file.size > 10 * 1024 * 1024) { failed.push(`${file.name} (over 10 MB)`); continue; }
+        try {
+          await uploadOne(file, user.id);
+          okCount++;
+        } catch (err) {
+          console.error('[Files] upload one:', extractError(err), err);
+          failed.push(file.name);
+        }
+      }
+      if (okCount > 0) toast.success(`${okCount} file${okCount > 1 ? 's' : ''} uploaded! +${okCount * 5} pts`);
+      if (failed.length) toast.error(`Couldn't upload: ${failed.join(', ')}`);
       await loadAll();
     } catch (err) {
       const msg = extractError(err);
@@ -520,7 +543,7 @@ export default function Files() {
           </Dialog>
 
           {/* Upload */}
-          <Input type="file" id="file-upload" className="hidden" onChange={handleUpload} disabled={uploading} />
+          <Input type="file" id="file-upload" className="hidden" onChange={handleUpload} disabled={uploading} multiple />
           <Button asChild disabled={uploading}>
             <label htmlFor="file-upload" className="cursor-pointer">
               <Upload className="mr-2 h-4 w-4" />

@@ -13,7 +13,7 @@ import { supabase } from '@/db/supabase';
 import type { AnalysisResult, AnalysisHistory } from '@/types';
 import {
   ScanSearch, Sparkles, ExternalLink, CheckCircle2, AlertCircle,
-  Clock, Trash2, ChevronRight, BarChart3,
+  Clock, Trash2, ChevronRight, BarChart3, Fingerprint, Wand2,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { extractError } from '@/lib/activity';
@@ -414,6 +414,95 @@ export default function AIAnalyzer() {
                     </div>
                   )}
                 </section>
+
+                {/* AI Writing Similarity (strict, Turnitin-style detector) */}
+                {activeResult.aiSimilarity && (() => {
+                  const ai = activeResult.aiSimilarity!;
+                  const tone = ai.score >= 61 ? 'red' : ai.score >= 36 ? 'amber' : 'green';
+                  const scoreColor = tone === 'red' ? 'text-destructive'
+                    : tone === 'amber' ? 'text-amber-600 dark:text-amber-400'
+                    : 'text-emerald-600 dark:text-emerald-400';
+                  const badgeClass = tone === 'red' ? 'text-destructive border-destructive/30'
+                    : tone === 'amber' ? 'text-amber-600 border-amber-300 dark:text-amber-400 dark:border-amber-800'
+                    : 'text-emerald-600 border-emerald-300 dark:text-emerald-400 dark:border-emerald-800';
+                  return (
+                    <>
+                      <Separator />
+                      <section className="space-y-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2">
+                            <Fingerprint className="h-4 w-4 text-muted-foreground" />
+                            <h2 className="text-sm font-semibold">AI Writing Similarity</h2>
+                          </div>
+                          <Badge variant="outline" className={`text-xs ${badgeClass}`}>{ai.verdict}</Badge>
+                        </div>
+
+                        <div className="rounded-xl border border-border/50 p-4 space-y-3">
+                          <div className="flex items-end gap-2">
+                            <span className={`text-4xl font-light tabular-nums ${scoreColor}`}>{ai.score}</span>
+                            <span className="text-sm text-muted-foreground pb-1">% likely AI-written</span>
+                            <span className="ml-auto text-xs text-muted-foreground pb-1 tabular-nums">{ai.confidence}% confidence</span>
+                          </div>
+                          <Progress value={ai.score} className="h-1.5" />
+                          <p className="text-sm text-muted-foreground text-pretty leading-relaxed">{ai.reasoning}</p>
+                        </div>
+
+                        {ai.signals && ai.signals.length > 0 && (
+                          <div className="space-y-1.5">
+                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-widest">Detected signals</p>
+                            <ul className="flex flex-wrap gap-1.5">
+                              {ai.signals.map((s, i) => (
+                                <li key={i}>
+                                  <Badge variant="secondary" className="text-xs font-normal">{s}</Badge>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+
+                        {ai.segments && ai.segments.length > 0 && (
+                          <div className="space-y-1.5">
+                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-widest">Flagged passages</p>
+                            <div className="space-y-2">
+                              {ai.segments.map((seg, i) => {
+                                const segTone = seg.likelihood >= 61 ? 'border-destructive bg-destructive/5'
+                                  : seg.likelihood >= 36 ? 'border-amber-400 bg-amber-50/50 dark:bg-amber-950/20'
+                                  : 'border-emerald-400 bg-emerald-50/50 dark:bg-emerald-950/20';
+                                return (
+                                  <div key={i} className={`rounded-r-lg border-l-2 py-2 pl-3 pr-2 ${segTone}`}>
+                                    <p className="text-sm italic text-foreground/90 text-pretty">&ldquo;{seg.text}&rdquo;</p>
+                                    <p className="text-xs text-muted-foreground mt-1 tabular-nums">
+                                      {seg.likelihood}% AI-likely &middot; {seg.reason}
+                                    </p>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {ai.humanizationTips && ai.humanizationTips.length > 0 && (
+                          <div className="space-y-1.5">
+                            <p className="text-xs font-medium text-muted-foreground uppercase tracking-widest flex items-center gap-1.5">
+                              <Wand2 className="h-3.5 w-3.5" /> Make it sound human
+                            </p>
+                            {ai.humanizationTips.map((t, i) => (
+                              <p key={i} className="text-sm text-muted-foreground flex gap-2 text-pretty">
+                                <ChevronRight className="h-4 w-4 shrink-0 mt-0.5" />{t}
+                              </p>
+                            ))}
+                          </div>
+                        )}
+
+                        {ai.advisory && (
+                          <p className="text-xs text-muted-foreground/70 flex gap-1.5 text-pretty">
+                            <AlertCircle className="h-3.5 w-3.5 shrink-0 mt-0.5" />{ai.advisory}
+                          </p>
+                        )}
+                      </section>
+                    </>
+                  );
+                })()}
 
                 <Separator />
 
